@@ -1,0 +1,19 @@
+# Binaries
+/video-amplifier
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.out
+coverage.out
+*.test
+
+# OS & Editor files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

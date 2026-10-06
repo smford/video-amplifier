@@ -1,0 +1,33 @@
+# video-amplifier Configuration File
+# High-performance streaming proxy for IP cameras with zero-transcode fan-out,
+# upstream isolation, circuit breaking, and backpressure protection.
+
+server:
+  http_port: 8080         # HTTP streaming port (MJPEG, snapshots, status API)
+  rtsp_port: 8554         # Downstream RTSP relay server port
+  metrics_port: 9090      # Dedicated Prometheus /metrics and health probes port
+  read_timeout: 10s       # Network socket read timeout
+  write_timeout: 10s      # Network socket write timeout
+  log_level: "INFO"       # DEBUG, INFO, WARN, ERROR
+  log_format: "text"      # "text" or "json"
+
+cameras:
+  # Example 1: 24/7 Security camera (Persistent connection)
+  - id: "front-door"
+    name: "Front Door 4K"
+    upstream_url: "rtsp://admin:secret@192.168.1.50:554/h264Preview_01_main"
+    mode: "always-on"            # "always-on" or "on-demand"
+    idle_timeout: "30s"          # Grace period before closing upstream after last client leaves
+    client_buffer_size: 120      # Max frames/packets queued per downstream client
+    retry_interval: "5s"         # Initial retry delay before exponential backoff
+    rtsp_transport: "tcp"        # "tcp", "udp", or "auto"
+    client_timeout: "10s"        # Inactive/lag threshold before disconnecting stalled client
+
+  # Example 2: Workshop Overhead MJPEG camera (Connects only on viewer demand)
+  - id: "workshop-mjpeg"
+    name: "Workshop Overhead"
+    upstream_url: "http://192.168.1.60/video.mjpg"
+    mode: "on-demand"            # Saves camera CPU and Wi-Fi bandwidth when no viewer is watching
+    idle_timeout: "30s"
+    client_buffer_size: 30
+    retry_interval: "5s"
