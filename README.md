@@ -122,6 +122,10 @@ cameras:
     retry_interval: "5s"         # Base reconnect interval before backoff
     rtsp_transport: "tcp"        # "tcp", "udp", or "auto"
     client_timeout: "10s"        # Inactivity threshold before dropping client
+    latency_watermark: "1500ms"  # Buffer latency threshold before GOP keyframe eviction
+    degradation_step: true       # Drop non-ref frames prior to full keyframe eviction
+    disconnect_timeout: "3s"     # Time without packets before synthetic keep-alive injection
+    synthetic_keepalives: true   # Maintain downstream NVR sessions during upstream dropouts
 
   - id: "workshop-mjpeg"
     name: "Workshop Overhead"
@@ -154,8 +158,14 @@ cameras:
 | `GET` | `/cameras/{id}/mjpeg` | Multipart MJPEG stream (`multipart/x-mixed-replace; boundary=...`) |
 | `GET` | `/cameras/{id}/snapshot.jpg` | Instant cached JPEG single frame (`image/jpeg`) |
 | `GET` | `/snapshot.jpg?camera={id}` | Query-based snapshot caching endpoint |
+| `POST` | `/cameras/{id}/whep` | **WHEP (WebRTC HTTP Egress)**: Standard SDP offer exchange for ultra-low latency browser playback |
+| `DELETE` | `/cameras/{id}/whep/{session}` | Terminate active WHEP WebRTC session |
+| `GET` | `/cameras/{id}/fmp4`, `/live.mp4` | **Fragmented MP4**: Chunked transfer stream (`video/mp4`) for MSE and browser `<video>` |
+| `GET` | `/cameras/{id}/ws` | **fMP4 over WebSockets**: Low-overhead binary stream for WebSocket-based players |
 | `GET` | `/{id}/mjpeg` | Short alias for MJPEG stream |
 | `GET` | `/{id}/snapshot.jpg` | Short alias for snapshot |
+| `GET` | `/{id}/fmp4` | Short alias for fMP4 stream |
+| `GET` | `/{id}/whep` | Short alias for WHEP endpoint |
 | `GET` | `/cameras` | JSON list of configured cameras and live metrics |
 | `GET` | `/cameras/{id}` | JSON status for a single camera |
 | `GET` | `/healthz` | Liveness probe (`200 OK`) |

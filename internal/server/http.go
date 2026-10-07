@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/smford/video-amplifier/internal/config"
+	"github.com/smford/video-amplifier/internal/egress"
 	"github.com/smford/video-amplifier/internal/logging"
 	"github.com/smford/video-amplifier/internal/upstream"
 )
@@ -23,6 +24,8 @@ type HTTPServer struct {
 	manager *upstream.Manager
 	logger  *slog.Logger
 	server  *http.Server
+	whep    *egress.WHEPManager
+	fmp4    *egress.FMP4Manager
 
 	mu        sync.RWMutex
 	clientIDs map[string]context.CancelFunc
@@ -38,6 +41,8 @@ func NewHTTPServer(cfg *config.Config, manager *upstream.Manager, logger *slog.L
 		cfg:       cfg,
 		manager:   manager,
 		logger:    logger.With(slog.String("component", "http_server")),
+		whep:      egress.NewWHEPManager(logger),
+		fmp4:      egress.NewFMP4Manager(logger),
 		clientIDs: make(map[string]context.CancelFunc),
 	}
 
@@ -155,6 +160,16 @@ func (s *HTTPServer) handleCameraRoute(w http.ResponseWriter, r *http.Request) {
 		s.streamMJPEG(w, r, cam)
 	case "snapshot.jpg", "snapshot":
 		s.serveSnapshot(w, r, cam)
+	case "whep":
+		if len(parts) >= 3 {
+			s.whep.HandleWHEPResource(w, r, camID, parts[2])
+		} else {
+			s.whep.HandleWHEPOffer(w, r, cam)
+		}
+	case "fmp4", "live.mp4":
+		s.fmp4.HandleFMP4Stream(w, r, cam)
+	case "ws", "fmp4.ws":
+		s.fmp4.HandleWebSocketStream(w, r, cam)
 	default:
 		http.NotFound(w, r)
 	}
@@ -204,6 +219,15 @@ func (s *HTTPServer) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 				return
 			case "snapshot.jpg", "snapshot":
 				s.serveSnapshot(w, r, cam)
+				return
+			case "fmp4", "live.mp4":
+				s.fmp4.HandleFMP4Stream(w, r, cam)
+				return
+			case "ws", "fmp4.ws":
+				s.fmp4.HandleWebSocketStream(w, r, cam)
+				return
+			case "whep":
+				s.whep.HandleWHEPOffer(w, r, cam)
 				return
 			}
 		}

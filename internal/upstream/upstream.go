@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pion/rtp"
 	"github.com/smford/video-amplifier/internal/circuitbreaker"
 	"github.com/smford/video-amplifier/internal/config"
 	"github.com/smford/video-amplifier/internal/logging"
@@ -47,6 +48,7 @@ type CameraStream struct {
 	// Active downstream clients
 	activeClientsMu sync.RWMutex
 	mjpegClients    map[string]*ringbuffer.RingBuffer[[]byte]
+	rtpClients      map[string]*ringbuffer.RingBuffer[*rtp.Packet]
 	rtspClientCount int
 
 	// Idle shutdown timer for on-demand feeds
@@ -97,6 +99,7 @@ func NewCameraStream(cfg config.CameraConfig, m *metrics.Metrics, logger *slog.L
 		breaker:      circuitbreaker.New(cbConfig),
 		state:        StateIdle,
 		mjpegClients: make(map[string]*ringbuffer.RingBuffer[[]byte]),
+		rtpClients:   make(map[string]*ringbuffer.RingBuffer[*rtp.Packet]),
 	}
 
 	return cs
@@ -107,6 +110,13 @@ func (cs *CameraStream) SetDriver(d Driver) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.driver = d
+}
+
+// Driver returns the underlying protocol-specific driver.
+func (cs *CameraStream) Driver() Driver {
+	cs.mu.RLock()
+	defer cs.mu.RUnlock()
+	return cs.driver
 }
 
 // State returns the current stream state.
@@ -230,7 +240,9 @@ func (cs *CameraStream) runLoop(ctx context.Context, driver Driver) {
 
 // OnClientConnected notifies the stream that a downstream client connected.
 func (cs *CameraStream) OnClientConnected(parentCtx context.Context, protocol string) {
-	cs.metrics.IncDownstreamActive(cs.Config.Name, protocol)
+	if cs.metrics != nil {
+		cs.metrics.IncDownstreamActive(cs.Config.Name, protocol)
+	}
 
 	cs.idleMu.Lock()
 	if cs.idleTimer != nil {
@@ -247,14 +259,16 @@ func (cs *CameraStream) OnClientConnected(parentCtx context.Context, protocol st
 
 // OnClientDisconnected notifies the stream that a downstream client disconnected.
 func (cs *CameraStream) OnClientDisconnected(protocol string) {
-	cs.metrics.DecDownstreamActive(cs.Config.Name, protocol)
+	if cs.metrics != nil {
+		cs.metrics.DecDownstreamActive(cs.Config.Name, protocol)
+	}
 
 	if cs.Config.Mode != config.ModeOnDemand {
 		return
 	}
 
 	cs.activeClientsMu.RLock()
-	totalClients := len(cs.mjpegClients) + cs.rtspClientCount
+	totalClients := len(cs.mjpegClients) + len(cs.rtpClients) + cs.rtspClientCount
 	cs.activeClientsMu.RUnlock()
 
 	if totalClients == 0 {
@@ -316,8 +330,54 @@ func (cs *CameraStream) UnsubscribeMJPEG(clientID string) {
 	cs.activeClientsMu.Unlock()
 
 	if exists {
-		cs.metrics.RemoveClientMetrics(cs.Config.Name, clientID)
+		if cs.metrics != nil {
+			cs.metrics.RemoveClientMetrics(cs.Config.Name, clientID)
+		}
 		cs.OnClientDisconnected("mjpeg")
+	}
+}
+
+// SubscribeRTP registers a downstream WebRTC/fMP4 client for raw RTP video packets.
+func (cs *CameraStream) SubscribeRTP(clientID string, parentCtx context.Context) *ringbuffer.RingBuffer[*rtp.Packet] {
+	buf := ringbuffer.NewRingBuffer[*rtp.Packet](cs.Config.ClientBufferSize, cs.Config.ClientTimeout.Duration())
+
+	cs.activeClientsMu.Lock()
+	cs.rtpClients[clientID] = buf
+	cs.activeClientsMu.Unlock()
+
+	cs.OnClientConnected(parentCtx, "rtp")
+	return buf
+}
+
+// UnsubscribeRTP unregisters an RTP consumer.
+func (cs *CameraStream) UnsubscribeRTP(clientID string) {
+	cs.activeClientsMu.Lock()
+	buf, exists := cs.rtpClients[clientID]
+	if exists {
+		delete(cs.rtpClients, clientID)
+		buf.Close()
+	}
+	cs.activeClientsMu.Unlock()
+
+	if exists {
+		if cs.metrics != nil {
+			cs.metrics.RemoveClientMetrics(cs.Config.Name, clientID)
+		}
+		cs.OnClientDisconnected("rtp")
+	}
+}
+
+// BroadcastRTPPacket delivers an RTP packet to all registered RTP listeners (WHEP / fMP4).
+func (cs *CameraStream) BroadcastRTPPacket(pkt *rtp.Packet) {
+	cs.activeClientsMu.RLock()
+	defer cs.activeClientsMu.RUnlock()
+
+	for clientID, buf := range cs.rtpClients {
+		if buf.Push(pkt) {
+			if cs.metrics != nil {
+				cs.metrics.IncDownstreamDropped(cs.Config.Name, clientID)
+			}
+		}
 	}
 }
 
@@ -432,7 +492,7 @@ func (cs *CameraStream) DecRTSPClient() {
 func (cs *CameraStream) TotalActiveClients() int {
 	cs.activeClientsMu.RLock()
 	defer cs.activeClientsMu.RUnlock()
-	return len(cs.mjpegClients) + cs.rtspClientCount
+	return len(cs.mjpegClients) + len(cs.rtpClients) + cs.rtspClientCount
 }
 
 // AddBytesReceived increments upstream received bytes.

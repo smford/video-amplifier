@@ -18,6 +18,8 @@ type Metrics struct {
 	upstreamBytesReceived *prometheus.CounterVec
 	downstreamActive      *prometheus.GaugeVec
 	downstreamDropped     *prometheus.CounterVec
+	gopEvictions          *prometheus.CounterVec
+	syntheticFrames       *prometheus.CounterVec
 
 	mu sync.RWMutex
 }
@@ -69,6 +71,20 @@ func NewMetrics(reg *prometheus.Registry) *Metrics {
 			},
 			[]string{"camera", "client_id"},
 		),
+		gopEvictions: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "video_amplifier_gop_evictions_total",
+				Help: "Total GOP-aware eviction events triggered for downstream clients due to latency.",
+			},
+			[]string{"camera", "client_id"},
+		),
+		syntheticFrames: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "video_amplifier_synthetic_frames_injected_total",
+				Help: "Total synthetic keep-alive frames injected during upstream camera outages.",
+			},
+			[]string{"camera"},
+		),
 	}
 
 	reg.MustRegister(
@@ -77,6 +93,8 @@ func NewMetrics(reg *prometheus.Registry) *Metrics {
 		m.upstreamBytesReceived,
 		m.downstreamActive,
 		m.downstreamDropped,
+		m.gopEvictions,
+		m.syntheticFrames,
 	)
 
 	return m
@@ -130,7 +148,19 @@ func (m *Metrics) IncDownstreamDropped(camera string, clientID string) {
 	m.downstreamDropped.WithLabelValues(camera, clientID).Inc()
 }
 
+// IncGOPEvictions increments the GOP eviction count for a client.
+func (m *Metrics) IncGOPEvictions(camera string, clientID string) {
+	m.gopEvictions.WithLabelValues(camera, clientID).Inc()
+}
+
+// IncSyntheticFrames increments the synthetic keep-alive frames counter for a camera.
+func (m *Metrics) IncSyntheticFrames(camera string) {
+	m.syntheticFrames.WithLabelValues(camera).Inc()
+}
+
 // RemoveClientMetrics removes the client_id series to prevent memory leaks when client disconnects.
 func (m *Metrics) RemoveClientMetrics(camera string, clientID string) {
 	m.downstreamDropped.DeleteLabelValues(camera, clientID)
+	m.gopEvictions.DeleteLabelValues(camera, clientID)
 }
+

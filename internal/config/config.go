@@ -91,6 +91,14 @@ type CameraConfig struct {
 	RTSPTransport    RTSPTransport `yaml:"rtsp_transport"`
 	ClientTimeout    Duration      `yaml:"client_timeout"`
 	SnapshotURL      string        `yaml:"snapshot_url"`
+
+	// GOP-Aware Intelligent Frame Eviction (ITEM 1)
+	LatencyWatermark Duration      `yaml:"latency_watermark"` // Max buffer latency before eviction (default: 1500ms)
+	DegradationStep  *bool         `yaml:"degradation_step"`  // Drop non-ref frames before full keyframe eviction (default: true)
+
+	// Upstream Decoupling & Synthetic Keep-Alives (ITEM 2)
+	DisconnectTimeout   Duration   `yaml:"disconnect_timeout"`   // Upstream timeout before synthetic keep-alive (default: 3s)
+	SyntheticKeepAlives *bool      `yaml:"synthetic_keepalives"` // Enable synthetic keep-alive stream injection (default: true)
 }
 
 // Config is the top-level configuration structure.
@@ -250,6 +258,21 @@ func (c *Config) ValidateAndSetDefaults() error {
 		default:
 			return fmt.Errorf("camera %q: invalid rtsp_transport %q (must be tcp, udp, or auto)", cam.ID, cam.RTSPTransport)
 		}
+
+		if cam.LatencyWatermark.Duration() <= 0 {
+			cam.LatencyWatermark = Duration(1500 * time.Millisecond)
+		}
+		if cam.DegradationStep == nil {
+			defaultTrue := true
+			cam.DegradationStep = &defaultTrue
+		}
+		if cam.DisconnectTimeout.Duration() <= 0 {
+			cam.DisconnectTimeout = Duration(3 * time.Second)
+		}
+		if cam.SyntheticKeepAlives == nil {
+			defaultTrue := true
+			cam.SyntheticKeepAlives = &defaultTrue
+		}
 	}
 
 	return nil
@@ -281,6 +304,10 @@ cameras:
     retry_interval: "5s"         # Base reconnect interval before exponential backoff
     rtsp_transport: "tcp"        # "tcp", "udp", or "auto" (tcp recommended for reliability)
     client_timeout: "10s"        # Inactivity threshold before dropping lagged client
+    latency_watermark: "1500ms"  # Buffer latency threshold before GOP keyframe eviction
+    degradation_step: true       # Drop non-ref frames prior to full keyframe eviction
+    disconnect_timeout: "3s"     # Time without packets before synthetic keep-alive stream
+    synthetic_keepalives: true   # Maintain downstream NVR sessions during upstream dropouts
 
   # Example 2: Backyard PTZ camera (on-demand connection saves bandwidth)
   - id: "backyard"

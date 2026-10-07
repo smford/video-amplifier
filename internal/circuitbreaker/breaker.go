@@ -43,7 +43,7 @@ func DefaultConfig() Config {
 	return Config{
 		FailureThreshold: 5,
 		BaseDelay:        1 * time.Second,
-		MaxDelay:         60 * time.Second,
+		MaxDelay:         30 * time.Second,
 		CooldownPeriod:   30 * time.Second,
 		JitterFraction:   0.20,
 	}

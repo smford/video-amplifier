@@ -14,12 +14,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/smford/video-amplifier/internal/config"
 	"github.com/smford/video-amplifier/internal/metrics"
+	"github.com/smford/video-amplifier/internal/rtpengine"
 	"github.com/smford/video-amplifier/internal/upstream"
 )
 
 type rtspSessionData struct {
-	cameraID string
-	clientID string
+	cameraID        string
+	clientID        string
+	evictionTracker *rtpengine.ClientEvictionTracker
+	lastWriteErr    time.Time
 }
 
 // RTSPServer manages the downstream RTSP relay server.
@@ -70,9 +73,19 @@ func (s *RTSPServer) SetManager(mgr *upstream.Manager) {
 }
 
 // SetStreamReady registers an upstream RTSP stream as ready to be read by downstream clients.
+// If an existing stream is already open for this cameraID, it re-uses the existing stream
+// to preserve all connected downstream client sessions (Item 2).
 func (s *RTSPServer) SetStreamReady(cameraID string, desc *description.Session) (*gortsplib.ServerStream, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// If stream already exists, keep it alive and reload description if needed
+	if existing, exists := s.streams[cameraID]; exists && existing != nil {
+		s.logger.Info("RTSP downstream stream already active; keeping client sessions attached",
+			slog.String("camera_id", cameraID),
+		)
+		return existing, nil
+	}
 
 	stream := &gortsplib.ServerStream{
 		Server: s.server,
@@ -93,9 +106,29 @@ func (s *RTSPServer) SetStreamReady(cameraID string, desc *description.Session) 
 }
 
 // SetStreamUnready removes a broadcast stream when its upstream disconnects.
+// If downstream clients are connected or synthetic keepalives are active,
+// the stream is kept intact so downstream NVRs are NOT disconnected.
 func (s *RTSPServer) SetStreamUnready(cameraID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Check if this camera has active downstream clients
+	hasDownstream := false
+	s.sessionsMu.RLock()
+	for _, sess := range s.sessions {
+		if sess.cameraID == cameraID {
+			hasDownstream = true
+			break
+		}
+	}
+	s.sessionsMu.RUnlock()
+
+	if hasDownstream {
+		s.logger.Info("Upstream disconnected, but keeping downstream RTSP stream open for active clients",
+			slog.String("camera_id", cameraID),
+		)
+		return
+	}
 
 	if stream, exists := s.streams[cameraID]; exists {
 		stream.Close()
@@ -178,6 +211,18 @@ func (s *RTSPServer) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*bas
 	stream, exists := s.streams[camID]
 	s.mu.RUnlock()
 
+	// If no stream initialized yet, but camera has cached description, initialize stream immediately
+	if (!exists || stream == nil) && cam != nil {
+		if rtspDrv, ok := cam.Driver().(*upstream.RTSPDriver); ok {
+			if cachedDesc := rtspDrv.CachedDesc(); cachedDesc != nil {
+				if sStream, err := s.SetStreamReady(camID, cachedDesc); err == nil {
+					stream = sStream
+					exists = true
+				}
+			}
+		}
+	}
+
 	if !exists || stream == nil {
 		return &base.Response{StatusCode: base.StatusServiceUnavailable}, nil, nil
 	}
@@ -203,20 +248,31 @@ func (s *RTSPServer) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Resp
 // OnPlay handles PLAY requests.
 func (s *RTSPServer) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Response, error) {
 	camID := strings.TrimPrefix(ctx.Session.Path(), "/")
+	if camID == "" && ctx.Path != "" {
+		camID = strings.TrimPrefix(ctx.Path, "/")
+	}
 	clientID := uuid.New().String()[:8]
 
-	s.sessionsMu.Lock()
-	s.sessions[ctx.Session] = &rtspSessionData{
-		cameraID: camID,
-		clientID: clientID,
-	}
-	s.sessionsMu.Unlock()
-
+	var tracker *rtpengine.ClientEvictionTracker
 	if s.manager != nil {
 		if cam, ok := s.manager.Get(camID); ok {
 			cam.IncRTSPClient(context.Background())
+			watermark := cam.Config.LatencyWatermark.Duration()
+			degStep := true
+			if cam.Config.DegradationStep != nil {
+				degStep = *cam.Config.DegradationStep
+			}
+			tracker = rtpengine.NewClientEvictionTracker(clientID, watermark, degStep)
 		}
 	}
+
+	s.sessionsMu.Lock()
+	s.sessions[ctx.Session] = &rtspSessionData{
+		cameraID:        camID,
+		clientID:        clientID,
+		evictionTracker: tracker,
+	}
+	s.sessionsMu.Unlock()
 
 	s.logger.Info("Downstream RTSP client started playing",
 		slog.String("camera_id", camID),
@@ -249,15 +305,24 @@ func (s *RTSPServer) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCt
 
 // OnStreamWriteError is called when a ServerStream fails to write to a slow reader session.
 func (s *RTSPServer) OnStreamWriteError(ctx *gortsplib.ServerHandlerOnStreamWriteErrorCtx) {
-	s.sessionsMu.RLock()
+	s.sessionsMu.Lock()
 	sessionData, exists := s.sessions[ctx.Session]
-	s.sessionsMu.RUnlock()
+	if exists {
+		sessionData.lastWriteErr = time.Now()
+		if sessionData.evictionTracker != nil {
+			// Trigger GOP eviction on write stalls/buffer overflow
+			sessionData.evictionTracker.State = rtpengine.StateEvicted
+			sessionData.evictionTracker.EvictionCount++
+		}
+	}
+	s.sessionsMu.Unlock()
 
 	if exists && s.manager != nil {
 		if cam, ok := s.manager.Get(sessionData.cameraID); ok {
 			s.metrics.IncDownstreamDropped(cam.Config.Name, sessionData.clientID)
+			s.metrics.IncGOPEvictions(cam.Config.Name, sessionData.clientID)
 		}
-		s.logger.Warn("Downstream RTSP client stalled (slow consumer drop)",
+		s.logger.Warn("Downstream RTSP client stalled (slow consumer drop, GOP eviction triggered)",
 			slog.String("camera_id", sessionData.cameraID),
 			slog.String("client_id", sessionData.clientID),
 			slog.Any("error", ctx.Error),

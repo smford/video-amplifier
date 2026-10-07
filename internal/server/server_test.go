@@ -9,10 +9,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/bluenviron/gortsplib/v5"
 	"github.com/bluenviron/gortsplib/v5/pkg/description"
 	"github.com/smford/video-amplifier/internal/config"
 	"github.com/smford/video-amplifier/internal/metrics"
+	"github.com/smford/video-amplifier/internal/rtpengine"
 	"github.com/smford/video-amplifier/internal/upstream"
 )
 
@@ -214,7 +217,89 @@ func TestRTSPServer_StreamLifecycle(t *testing.T) {
 		t.Fatalf("expected non-nil stream")
 	}
 
+	// Re-calling SetStreamReady for the same camera should return the existing stream without error
+	stream2, err := rtspSrv.SetStreamReady("test-cam", desc)
+	if err != nil || stream2 != stream {
+		t.Fatalf("expected stream to be re-used, got err=%v stream2=%v", err, stream2)
+	}
+
+	// Simulate connected session
+	sess := &gortsplib.ServerSession{}
+	rtspSrv.sessionsMu.Lock()
+	rtspSrv.sessions[sess] = &rtspSessionData{
+		cameraID: "test-cam",
+		clientID: "client-a",
+	}
+	rtspSrv.sessionsMu.Unlock()
+
+	// Upstream unready called while client is connected -> stream should be KEPT intact (Item 2)
 	rtspSrv.SetStreamUnready("test-cam")
+	rtspSrv.mu.RLock()
+	st, exists := rtspSrv.streams["test-cam"]
+	rtspSrv.mu.RUnlock()
+	if !exists || st == nil {
+		t.Fatalf("expected stream to remain open when downstream clients are connected")
+	}
+
+	// Client disconnects
+	rtspSrv.sessionsMu.Lock()
+	delete(rtspSrv.sessions, sess)
+	rtspSrv.sessionsMu.Unlock()
+
+	// Now unready should tear down the unused stream
+	rtspSrv.SetStreamUnready("test-cam")
+	rtspSrv.mu.RLock()
+	_, exists = rtspSrv.streams["test-cam"]
+	rtspSrv.mu.RUnlock()
+	if exists {
+		t.Fatalf("expected stream to be closed after all clients disconnect")
+	}
+}
+
+func TestRTSPServer_OnStreamWriteError_GOPEviction(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Cameras = []config.CameraConfig{
+		{
+			ID:          "evict-cam",
+			Name:        "Evict Cam",
+			UpstreamURL: "http://localhost/video.mjpg",
+		},
+	}
+	m := metrics.NewMetrics(nil)
+	mgr := upstream.NewManager(cfg, m, nil, nil)
+	_ = mgr.Start(context.Background())
+	defer mgr.Stop()
+
+	rtspSrv := NewRTSPServer(cfg, m, nil)
+	rtspSrv.SetManager(mgr)
+
+	sess := &gortsplib.ServerSession{}
+	// Setup session
+	_, _ = rtspSrv.OnPlay(&gortsplib.ServerHandlerOnPlayCtx{
+		Session: sess,
+		Path:    "/evict-cam",
+	})
+
+	rtspSrv.sessionsMu.RLock()
+	data := rtspSrv.sessions[sess]
+	rtspSrv.sessionsMu.RUnlock()
+
+	if data == nil || data.evictionTracker == nil {
+		t.Fatalf("expected session data with eviction tracker")
+	}
+
+	// Trigger write error (slow consumer)
+	rtspSrv.OnStreamWriteError(&gortsplib.ServerHandlerOnStreamWriteErrorCtx{
+		Session: sess,
+		Error:   io.ErrClosedPipe,
+	})
+
+	if data.evictionTracker.State != rtpengine.StateEvicted {
+		t.Fatalf("expected evictionTracker state to be StateEvicted, got %v", data.evictionTracker.State)
+	}
+	if data.evictionTracker.EvictionCount == 0 {
+		t.Fatalf("expected EvictionCount > 0")
+	}
 }
 
 func TestMetricsServer(t *testing.T) {
@@ -239,3 +324,48 @@ func TestMetricsServer(t *testing.T) {
 		t.Fatalf("missing expected metric in scrape: %s", w.Body.String())
 	}
 }
+
+func TestHTTPServer_WHEPAndFMP4Routes(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Cameras = []config.CameraConfig{
+		{
+			ID:          "stream-cam",
+			Name:        "Stream Cam",
+			UpstreamURL: "rtsp://localhost/stream",
+			Mode:        config.ModeAlwaysOn,
+		},
+	}
+	m := metrics.NewMetrics(nil)
+	mgr := upstream.NewManager(cfg, m, nil, nil)
+	_ = mgr.Start(context.Background())
+	defer mgr.Stop()
+
+	server := NewHTTPServer(cfg, mgr, nil)
+
+	// Test WHEP endpoint with invalid method (GET) -> should return 405 Method Not Allowed
+	req := httptest.NewRequest(http.MethodGet, "/cameras/stream-cam/whep", nil)
+	w := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(w, req)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for GET /whep, got %d", w.Code)
+	}
+
+	// Test fMP4 endpoint initial connection -> returns 200 with video/mp4 header
+	ctx, cancel := context.WithCancel(context.Background())
+	fmp4Req := httptest.NewRequest(http.MethodGet, "/cameras/stream-cam/fmp4", nil).WithContext(ctx)
+	fmp4W := httptest.NewRecorder()
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	server.server.Handler.ServeHTTP(fmp4W, fmp4Req)
+	if fmp4W.Code != http.StatusOK {
+		t.Fatalf("expected 200 for GET /fmp4, got %d", fmp4W.Code)
+	}
+	if fmp4W.Header().Get("Content-Type") != "video/mp4" {
+		t.Fatalf("expected video/mp4 Content-Type, got %s", fmp4W.Header().Get("Content-Type"))
+	}
+}
+
