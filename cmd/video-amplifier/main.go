@@ -22,14 +22,48 @@ var (
 )
 
 func main() {
+	// Handle "video-amplifier init [flags]" subcommand
+	if len(os.Args) > 1 && os.Args[1] == "init" {
+		initCmd := flag.NewFlagSet("init", flag.ExitOnError)
+		outputPath := initCmd.String("output", "config.yaml", "Destination path for generated configuration file")
+		force := initCmd.Bool("force", false, "Overwrite destination file if it already exists")
+		printStdout := initCmd.Bool("stdout", false, "Print configuration to stdout instead of writing to file")
+		_ = initCmd.Parse(os.Args[2:])
+
+		if *printStdout {
+			fmt.Print(config.SampleConfigYAML())
+			os.Exit(0)
+		}
+
+		if err := config.WriteSampleConfig(*outputPath, *force); err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating configuration file: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Successfully generated configuration file at %s\n\nTo run video-amplifier with this configuration:\n  video-amplifier -config %s\n", *outputPath, *outputPath)
+		os.Exit(0)
+	}
+
 	configPath := flag.String("config", "config.yaml", "Path to YAML configuration file")
 	showVersion := flag.Bool("version", false, "Print version information and exit")
+	initFlag := flag.Bool("init", false, "Generate a useful configuration file and exit")
+	forceFlag := flag.Bool("force", false, "Overwrite existing file when using -init")
+	outputFlag := flag.String("output", "config.yaml", "Output path when using -init")
 	logLevelFlag := flag.String("log-level", "", "Override log level (DEBUG, INFO, WARN, ERROR)")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Printf("video-amplifier version %s (%s) built at %s on %s/%s\n",
 			Version, GitCommit, BuildDate, runtime.GOOS, runtime.GOARCH)
+		os.Exit(0)
+	}
+
+	if *initFlag {
+		if err := config.WriteSampleConfig(*outputFlag, *forceFlag); err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating configuration file: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Successfully generated configuration file at %s\n\nTo run video-amplifier with this configuration:\n  video-amplifier -config %s\n", *outputFlag, *outputFlag)
 		os.Exit(0)
 	}
 

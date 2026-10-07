@@ -192,8 +192,29 @@ make test-race
 # Build the binary
 make build
 
-# Start with example configuration
-./video-amplifier -config config.example.yaml
+# Generate a starter configuration file template
+./video-amplifier init
+
+# Start video-amplifier
+./video-amplifier -config config.yaml
+```
+
+### Generating a Configuration File (`init`)
+
+To generate a production-ready, fully commented configuration file with realistic camera examples:
+
+```bash
+# Generate config.yaml in the current directory
+./video-amplifier init
+
+# Specify a custom destination path
+./video-amplifier init -output my-cameras.yaml
+
+# Overwrite an existing configuration file
+./video-amplifier init -force
+
+# Print configuration to standard output (e.g. for piping)
+./video-amplifier init -stdout
 ```
 
 ### Running with Docker

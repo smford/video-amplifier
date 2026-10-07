@@ -141,3 +141,32 @@ func TestConfigValidation_InvalidURL(t *testing.T) {
 		t.Fatalf("expected error on invalid URL scheme, got nil")
 	}
 }
+
+func TestWriteSampleConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	targetPath := filepath.Join(tmpDir, "generated.yaml")
+
+	// Initial write should succeed
+	if err := WriteSampleConfig(targetPath, false); err != nil {
+		t.Fatalf("failed to write sample config: %v", err)
+	}
+
+	// Loading the written file should parse cleanly
+	cfg, err := LoadConfig(targetPath)
+	if err != nil {
+		t.Fatalf("failed to load generated sample config: %v", err)
+	}
+	if len(cfg.Cameras) == 0 {
+		t.Fatalf("expected cameras in sample config, got 0")
+	}
+
+	// Second write without force should fail
+	if err := WriteSampleConfig(targetPath, false); err == nil {
+		t.Fatalf("expected error when writing without force to existing file")
+	}
+
+	// Write with force should succeed
+	if err := WriteSampleConfig(targetPath, true); err != nil {
+		t.Fatalf("expected success with force=true: %v", err)
+	}
+}

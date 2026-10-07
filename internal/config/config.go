@@ -254,3 +254,63 @@ func (c *Config) ValidateAndSetDefaults() error {
 
 	return nil
 }
+
+// SampleConfigYAML returns a production-ready, fully commented configuration file template.
+func SampleConfigYAML() string {
+	return `# video-amplifier Configuration File
+# High-performance streaming proxy for IP cameras with zero-transcode fan-out,
+# upstream isolation, circuit breaking, and backpressure protection.
+
+server:
+  http_port: 8080         # HTTP streaming port (MJPEG, snapshots, status API, web UI)
+  rtsp_port: 8554         # Downstream RTSP relay server port
+  metrics_port: 9090      # Dedicated Prometheus /metrics and health probes port
+  read_timeout: 10s       # Network socket read timeout
+  write_timeout: 10s      # Network socket write timeout
+  log_level: "INFO"       # Log level: DEBUG, INFO, WARN, ERROR
+  log_format: "text"      # Log format: "text" or "json"
+
+cameras:
+  # Example 1: 24/7 Security camera (always-on persistent ingest)
+  - id: "front-door"
+    name: "Front Door 4K"
+    upstream_url: "rtsp://admin:secret@192.168.1.50:554/h264Preview_01_main"
+    mode: "always-on"            # "always-on" or "on-demand"
+    idle_timeout: "30s"          # Idle grace period before stopping on-demand stream
+    client_buffer_size: 120      # Max frames/packets queued per downstream client
+    retry_interval: "5s"         # Base reconnect interval before exponential backoff
+    rtsp_transport: "tcp"        # "tcp", "udp", or "auto" (tcp recommended for reliability)
+    client_timeout: "10s"        # Inactivity threshold before dropping lagged client
+
+  # Example 2: Backyard PTZ camera (on-demand connection saves bandwidth)
+  - id: "backyard"
+    name: "Backyard PTZ"
+    upstream_url: "rtsp://admin:secret@192.168.1.51:554/stream1"
+    mode: "on-demand"            # Ingests only when >= 1 downstream viewer is active
+    idle_timeout: "30s"          # Keeps feed warm for 30s after last client disconnects
+    client_buffer_size: 60
+    retry_interval: "5s"
+    rtsp_transport: "tcp"
+    client_timeout: "10s"
+
+  # Example 3: Workshop Overhead MJPEG camera
+  - id: "workshop-mjpeg"
+    name: "Workshop Overhead"
+    upstream_url: "http://192.168.1.60/video.mjpg"
+    mode: "on-demand"
+    idle_timeout: "30s"
+    client_buffer_size: 30
+    retry_interval: "5s"
+`
+}
+
+// WriteSampleConfig writes the sample configuration to targetPath.
+// If force is false and the file already exists, it returns an error.
+func WriteSampleConfig(targetPath string, force bool) error {
+	if !force {
+		if _, err := os.Stat(targetPath); err == nil {
+			return fmt.Errorf("file %q already exists (use --force to overwrite)", targetPath)
+		}
+	}
+	return os.WriteFile(targetPath, []byte(SampleConfigYAML()), 0644)
+}

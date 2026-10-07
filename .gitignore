@@ -11,9 +11,15 @@
 coverage.out
 *.test
 
+# Local configuration files containing camera credentials
+config.yaml
+*.local.yaml
+.env
+
 # OS & Editor files
 .DS_Store
 .idea/
 .vscode/
 *.swp
 *~
+
