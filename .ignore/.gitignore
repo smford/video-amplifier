@@ -1,0 +1,5 @@
+# Ignore all files and directories in this folder
+*
+
+# Preserve this .gitignore file so the directory is tracked by git
+!.gitignore
