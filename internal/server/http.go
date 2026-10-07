@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/smford/video-amplifier/internal/config"
+	"github.com/smford/video-amplifier/internal/logging"
 	"github.com/smford/video-amplifier/internal/upstream"
 )
 
@@ -138,7 +139,7 @@ func (s *HTTPServer) handleCameraRoute(w http.ResponseWriter, r *http.Request) {
 		summary := upstream.CameraSummary{
 			ID:            cam.Config.ID,
 			Name:          cam.Config.Name,
-			UpstreamURL:   cam.Config.UpstreamURL,
+			UpstreamURL:   logging.RedactCredentials(cam.Config.UpstreamURL),
 			Mode:          cam.Config.Mode,
 			State:         cam.State(),
 			ActiveClients: cam.TotalActiveClients(),
@@ -252,14 +253,28 @@ func (s *HTTPServer) streamMJPEG(w http.ResponseWriter, r *http.Request, cam *up
 	flusher.Flush()
 
 	for {
-		frame, err := queue.Pop(ctx)
+		// Try popping from ring buffer with 2s timeout
+		popCtx, popCancel := context.WithTimeout(ctx, 2*time.Second)
+		frame, err := queue.Pop(popCtx)
+		popCancel()
+
 		if err != nil {
-			s.logger.Debug("Downstream MJPEG client stream ended",
-				slog.String("camera", cam.Config.Name),
-				slog.String("client_id", clientID),
-				slog.Any("reason", err),
-			)
-			return
+			if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+				return
+			}
+			// If ring buffer timed out, fall back to fetching snapshot on-demand
+			snapCtx, snapCancel := context.WithTimeout(ctx, 3*time.Second)
+			snapFrame, _, snapErr := cam.GetOrFetchSnapshot(snapCtx)
+			snapCancel()
+			if snapErr != nil || len(snapFrame) == 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(500 * time.Millisecond):
+					continue
+				}
+			}
+			frame = snapFrame
 		}
 
 		// Write multipart JPEG frame
@@ -274,50 +289,18 @@ func (s *HTTPServer) streamMJPEG(w http.ResponseWriter, r *http.Request, cam *up
 	}
 }
 
-// serveSnapshot serves the cached snapshot or fetches one if on-demand and idle.
+// serveSnapshot serves the cached snapshot or fetches one on-demand.
 func (s *HTTPServer) serveSnapshot(w http.ResponseWriter, r *http.Request, cam *upstream.CameraStream) {
-	// Try getting from cache first
-	frame, ts, err := cam.GetLatestSnapshot()
+	snapCtx, snapCancel := context.WithTimeout(r.Context(), 6*time.Second)
+	defer snapCancel()
+
+	frame, ts, err := cam.GetOrFetchSnapshot(snapCtx)
 	if err == nil && len(frame) > 0 {
 		s.writeJPEGResponse(w, frame, ts)
 		return
 	}
 
-	// If no snapshot in cache and snapshot_url is configured, fetch single frame directly
-	if cam.Config.SnapshotURL != "" {
-		snapCtx, snapCancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer snapCancel()
-
-		fetchedFrame, fetchErr := upstream.FetchSingleSnapshot(snapCtx, cam.Config.SnapshotURL)
-		if fetchErr == nil && len(fetchedFrame) > 0 {
-			cam.UpdateSnapshot(fetchedFrame)
-			s.writeJPEGResponse(w, fetchedFrame, time.Now())
-			return
-		}
-	}
-
-	// If camera is HTTP and no snapshot yet, try fetching single frame from UpstreamURL
-	if strings.HasPrefix(cam.Config.UpstreamURL, "http://") || strings.HasPrefix(cam.Config.UpstreamURL, "https://") {
-		// Wake up camera stream
-		cam.OnClientConnected(r.Context(), "mjpeg")
-		defer cam.OnClientDisconnected("mjpeg")
-
-		// Poll for first frame up to 3 seconds
-		deadline := time.Now().Add(3 * time.Second)
-		for time.Now().Before(deadline) {
-			select {
-			case <-r.Context().Done():
-				return
-			case <-time.After(100 * time.Millisecond):
-				frame, ts, err := cam.GetLatestSnapshot()
-				if err == nil && len(frame) > 0 {
-					s.writeJPEGResponse(w, frame, ts)
-					return
-				}
-			}
-		}
-	}
-
+	s.logger.Warn("Failed to serve snapshot", slog.String("camera", cam.Config.Name), slog.Any("error", err))
 	http.Error(w, "Snapshot not available (camera warming up or offline)", http.StatusServiceUnavailable)
 }
 

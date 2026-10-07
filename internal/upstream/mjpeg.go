@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"time"
 )
 
 const (
@@ -142,39 +141,4 @@ func (d *MJPEGDriver) readFrames(ctx context.Context, r io.Reader) error {
 			return fmt.Errorf("read error from upstream MJPEG: %w", err)
 		}
 	}
-}
-
-// FetchSingleSnapshot issues a one-off HTTP request to fetch a single JPEG snapshot.
-func FetchSingleSnapshot(ctx context.Context, snapshotURL string) ([]byte, error) {
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, snapshotURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "video-amplifier/1.0")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("snapshot upstream returned HTTP %d", resp.StatusCode)
-	}
-
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxJPEGFrameSize))
-	if err != nil {
-		return nil, err
-	}
-
-	// Verify JPEG header
-	if len(data) < 4 || data[0] != 0xFF || data[1] != 0xD8 {
-		return nil, errors.New("invalid JPEG image received from snapshot endpoint")
-	}
-
-	return data, nil
 }

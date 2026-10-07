@@ -371,59 +371,77 @@
         document.getElementById('stat-clients').innerText = totalClients;
         document.getElementById('stat-bytes').innerText = formatBytes(totalBytes);
 
-        // Render cards
-        grid.innerHTML = cameras.map(cam => {
-          const isHTTP = (cam.upstream_url || '').startsWith('http');
-          const streamSrc = isHTTP ? ('/cameras/' + cam.id + '/mjpeg') : ('/cameras/' + cam.id + '/snapshot.jpg');
+        // Render or update cards in-place to avoid breaking live video streams
+        cameras.forEach(cam => {
+          let card = document.getElementById(`card-${cam.id}`);
           const mjpegURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/mjpeg';
           const rtspURL = 'rtsp://' + hostname + ':8554/' + cam.id;
           const snapURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
+          const streamSrc = '/cameras/' + cam.id + '/mjpeg';
 
-          return `
-            <div class="camera-card" id="card-${cam.id}">
-              <div class="card-header">
-                <div class="cam-info">
-                  <h2>${cam.name || cam.id}</h2>
-                  <div class="cam-id">${cam.id}</div>
-                </div>
-                <div class="badges">
-                  <span class="badge badge-mode">${cam.mode}</span>
-                  <span class="badge ${getBadgeClass(cam.state)}">${cam.state}</span>
-                </div>
-              </div>
+          if (!card) {
+            const emptyState = grid.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
 
-              <div class="video-viewport">
-                <img src="${streamSrc}" alt="${cam.name}" loading="lazy" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg';" />
-                <div class="video-overlay">
-                  <div class="live-dot"></div>
-                  <span>${cam.state}</span>
-                </div>
-              </div>
-
-              <div class="card-footer">
-                <div class="metrics-row">
-                  <span>Downstream Viewers: <strong>${cam.active_clients || 0}</strong></span>
-                  <span>Received: <strong>${formatBytes(cam.bytes_received)}</strong></span>
-                </div>
-
-                <div class="stream-urls">
-                  <div class="url-chip">
-                    <span>${mjpegURL}</span>
-                    <button class="copy-btn" onclick="copyToClipboard('${mjpegURL}', this)">Copy MJPEG</button>
+            const cardHtml = `
+              <div class="camera-card" id="card-${cam.id}">
+                <div class="card-header">
+                  <div class="cam-info">
+                    <h2>${cam.name || cam.id}</h2>
+                    <div class="cam-id">${cam.id}</div>
                   </div>
-                  <div class="url-chip">
-                    <span>${rtspURL}</span>
-                    <button class="copy-btn" onclick="copyToClipboard('${rtspURL}', this)">Copy RTSP</button>
-                  </div>
-                  <div class="url-chip">
-                    <span><a href="${snapURL}" target="_blank" style="color:inherit;text-decoration:none;">${snapURL}</a></span>
-                    <button class="copy-btn" onclick="copyToClipboard('${snapURL}', this)">Copy Snapshot</button>
+                  <div class="badges">
+                    <span class="badge badge-mode">${cam.mode}</span>
+                    <span class="badge ${getBadgeClass(cam.state)}" id="badge-state-${cam.id}">${cam.state}</span>
                   </div>
                 </div>
+
+                <div class="video-viewport">
+                  <img id="img-${cam.id}" src="${streamSrc}" alt="${cam.name}" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg?t=' + Date.now();" />
+                  <div class="video-overlay">
+                    <div class="live-dot" id="dot-${cam.id}"></div>
+                    <span id="overlay-state-${cam.id}">${cam.state}</span>
+                  </div>
+                </div>
+
+                <div class="card-footer">
+                  <div class="metrics-row">
+                    <span>Downstream Viewers: <strong id="clients-${cam.id}">${cam.active_clients || 0}</strong></span>
+                    <span>Received: <strong id="bytes-${cam.id}">${formatBytes(cam.bytes_received)}</strong></span>
+                  </div>
+
+                  <div class="stream-urls">
+                    <div class="url-chip">
+                      <span>${mjpegURL}</span>
+                      <button class="copy-btn" onclick="copyToClipboard('${mjpegURL}', this)">Copy MJPEG</button>
+                    </div>
+                    <div class="url-chip">
+                      <span>${rtspURL}</span>
+                      <button class="copy-btn" onclick="copyToClipboard('${rtspURL}', this)">Copy RTSP</button>
+                    </div>
+                    <div class="url-chip">
+                      <span><a href="${snapURL}" target="_blank" style="color:inherit;text-decoration:none;">${snapURL}</a></span>
+                      <button class="copy-btn" onclick="copyToClipboard('${snapURL}', this)">Copy Snapshot</button>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-          `;
-        }).join('');
+            `;
+            grid.insertAdjacentHTML('beforeend', cardHtml);
+          } else {
+            const badge = document.getElementById(`badge-state-${cam.id}`);
+            if (badge) {
+              badge.className = `badge ${getBadgeClass(cam.state)}`;
+              badge.innerText = cam.state;
+            }
+            const overlayState = document.getElementById(`overlay-state-${cam.id}`);
+            if (overlayState) overlayState.innerText = cam.state;
+            const clients = document.getElementById(`clients-${cam.id}`);
+            if (clients) clients.innerText = cam.active_clients || 0;
+            const bytes = document.getElementById(`bytes-${cam.id}`);
+            if (bytes) bytes.innerText = formatBytes(cam.bytes_received);
+          }
+        });
 
       } catch (err) {
         console.error('Failed refreshing camera dashboard', err);

@@ -128,7 +128,7 @@ func (d *RTSPDriver) Start(ctx context.Context) error {
 		if mjpegDecoder != nil {
 			if _, ok := forma.(*format.MJPEG); ok {
 				if jpegBytes, err := mjpegDecoder.Decode(pkt); err == nil && len(jpegBytes) > 0 {
-					d.stream.UpdateSnapshot(jpegBytes)
+					d.stream.BroadcastMJPEGFrame(jpegBytes)
 				}
 			}
 		}

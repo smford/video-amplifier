@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -161,6 +162,10 @@ func (cs *CameraStream) ensureRunning(parentCtx context.Context) {
 	cs.idleMu.Unlock()
 
 	go cs.runLoop(ctx, driver)
+
+	if snapURL := cs.ResolvedSnapshotURL(); snapURL != "" && snapURL != cs.Config.UpstreamURL && strings.HasPrefix(snapURL, "rtsp://") {
+		StartSnapshotIngest(ctx, cs, snapURL)
+	}
 }
 
 // runLoop supervises the driver with exponential backoff and circuit breaking.
@@ -349,6 +354,54 @@ func (cs *CameraStream) GetLatestSnapshot() ([]byte, time.Time, error) {
 		return nil, time.Time{}, ErrNoSnapshotFrame
 	}
 	return cs.lastSnapshot, cs.snapshotTime, nil
+}
+
+// ResolvedSnapshotURL returns the configured SnapshotURL or auto-derives stream8 for RTSP cameras.
+func (cs *CameraStream) ResolvedSnapshotURL() string {
+	if cs.Config.SnapshotURL != "" {
+		return cs.Config.SnapshotURL
+	}
+	if strings.Contains(cs.Config.UpstreamURL, "/stream1") {
+		return strings.Replace(cs.Config.UpstreamURL, "/stream1", "/stream8", 1)
+	}
+	if strings.Contains(cs.Config.UpstreamURL, "/stream2") {
+		return strings.Replace(cs.Config.UpstreamURL, "/stream2", "/stream8", 1)
+	}
+	return ""
+}
+
+// GetOrFetchSnapshot returns the latest cached snapshot if fresh (< 2s old),
+// or fetches a fresh snapshot frame on-demand from SnapshotURL or UpstreamURL.
+func (cs *CameraStream) GetOrFetchSnapshot(ctx context.Context) ([]byte, time.Time, error) {
+	cs.snapshotMu.RLock()
+	if len(cs.lastSnapshot) > 0 && time.Since(cs.snapshotTime) < 2*time.Second {
+		frame := cs.lastSnapshot
+		ts := cs.snapshotTime
+		cs.snapshotMu.RUnlock()
+		return frame, ts, nil
+	}
+	cs.snapshotMu.RUnlock()
+
+	targetURL := cs.ResolvedSnapshotURL()
+	if targetURL == "" {
+		targetURL = cs.Config.UpstreamURL
+	}
+
+	frame, err := FetchSingleSnapshot(ctx, targetURL)
+	if err != nil {
+		cs.snapshotMu.RLock()
+		if len(cs.lastSnapshot) > 0 {
+			f := cs.lastSnapshot
+			t := cs.snapshotTime
+			cs.snapshotMu.RUnlock()
+			return f, t, nil
+		}
+		cs.snapshotMu.RUnlock()
+		return nil, time.Time{}, err
+	}
+
+	cs.UpdateSnapshot(frame)
+	return frame, time.Now(), nil
 }
 
 // IncRTSPClient increments the RTSP active client count.

@@ -2,12 +2,12 @@ package upstream
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 
 	"github.com/smford/video-amplifier/internal/config"
+	"github.com/smford/video-amplifier/internal/logging"
 	"github.com/smford/video-amplifier/internal/metrics"
 )
 
@@ -136,7 +136,7 @@ func (m *Manager) Summaries() []CameraSummary {
 		summaries[i] = CameraSummary{
 			ID:            s.Config.ID,
 			Name:          s.Config.Name,
-			UpstreamURL:   fmt.Sprintf("%s", s.Config.UpstreamURL),
+			UpstreamURL:   logging.RedactCredentials(s.Config.UpstreamURL),
 			Mode:          s.Config.Mode,
 			State:         s.State(),
 			ActiveClients: s.TotalActiveClients(),
