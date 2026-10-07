@@ -111,6 +111,8 @@ server:
   write_timeout: 10s      # Socket write timeout
   log_level: "INFO"       # DEBUG, INFO, WARN, ERROR
   log_format: "text"      # text or json
+  web_username: ""        # Optional: HTTP Basic auth username for main dashboard/web UI
+  web_password: ""        # Optional: HTTP Basic auth password for main dashboard/web UI
 
 cameras:
   - id: "front-door"
@@ -150,6 +152,8 @@ cameras:
 | `VIDEO_AMPLIFIER_SERVER_METRICS_PORT`| Metrics port (default: 9090) |
 | `VIDEO_AMPLIFIER_LOG_LEVEL` | Log level (`DEBUG`, `INFO`, `WARN`, `ERROR`) |
 | `VIDEO_AMPLIFIER_LOG_FORMAT` | Log format (`text` or `json`) |
+| `VIDEO_AMPLIFIER_WEB_USERNAME` | Web dashboard Basic Auth username |
+| `VIDEO_AMPLIFIER_WEB_PASSWORD` | Web dashboard Basic Auth password |
 
 ---
 

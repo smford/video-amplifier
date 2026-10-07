@@ -173,6 +173,16 @@
       color: var(--badge-blue);
       border: 1px solid rgba(99, 102, 241, 0.3);
     }
+    .badge-auth {
+      background: rgba(148, 163, 184, 0.12);
+      color: var(--text-muted);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .badge-auth-locked {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--badge-yellow);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
     .view-toggle {
       display: inline-flex;
       border: 1px solid var(--card-border);
@@ -501,11 +511,31 @@
           }
           const mode = cameraModes[cam.id];
           let card = document.getElementById(`card-${cam.id}`);
+
+          // Determine auth badge and display properties
+          const authMode = cam.auth_mode || 'none';
+          const authRequired = !!cam.auth_required;
+          let authBadgeClass = 'badge-auth';
+          let authBadgeLabel = 'Auth: None';
+          if (authMode === 'custom') {
+            authBadgeClass = 'badge-auth-locked';
+            authBadgeLabel = 'Auth: Custom';
+          } else if (authMode === 'passthrough') {
+            authBadgeClass = 'badge-auth-locked';
+            authBadgeLabel = 'Auth: Passthrough';
+          }
+
+          // Direct browser playback URLs (browser will prompt for credentials via HTTP basic auth if required)
           const mjpegURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/mjpeg';
-          const rtspURL = 'rtsp://' + hostname + ':8554/' + cam.id;
           const snapURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
           const initialSrc = mode === 'live' ? mjpegURL : `${snapURL}?t=${now}`;
           const overlayText = mode === 'live' ? 'LIVE STREAM' : `Snapshot &bull; ${timeStr}`;
+
+          // Copyable link representations: show credentials placeholder if authentication is required without revealing secrets
+          const authPrefix = authRequired ? '<username>:<password>@' : '';
+          const copySnapURL = window.location.protocol + '//' + authPrefix + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
+          const copyMjpegURL = window.location.protocol + '//' + authPrefix + window.location.host + '/cameras/' + cam.id + '/mjpeg';
+          const copyRtspURL = 'rtsp://' + authPrefix + hostname + ':8554/' + cam.id;
 
           if (!card) {
             const emptyState = grid.querySelector('.empty-state');
@@ -519,6 +549,7 @@
                     <div class="cam-id">${cam.id}</div>
                   </div>
                   <div class="badges">
+                    <span class="badge ${authBadgeClass}" id="badge-auth-${cam.id}">${authBadgeLabel}</span>
                     <span class="badge badge-mode">${cam.mode}</span>
                     <span class="badge ${getBadgeClass(cam.state)}" id="badge-state-${cam.id}">${cam.state}</span>
                     <div class="view-toggle">
@@ -543,17 +574,17 @@
                   </div>
 
                   <div class="stream-urls">
-                    <div class="url-chip">
-                      <span>${snapURL}</span>
-                      <button class="copy-btn" onclick="copyToClipboard('${snapURL}', this)">Copy Snapshot</button>
+                    <div class="url-chip" title="${copySnapURL}">
+                      <span>${copySnapURL}</span>
+                      <button class="copy-btn" onclick="copyToClipboard('${copySnapURL}', this)">Copy Snapshot</button>
                     </div>
-                    <div class="url-chip">
-                      <span>${mjpegURL}</span>
-                      <button class="copy-btn" onclick="copyToClipboard('${mjpegURL}', this)">Copy MJPEG</button>
+                    <div class="url-chip" title="${copyMjpegURL}">
+                      <span>${copyMjpegURL}</span>
+                      <button class="copy-btn" onclick="copyToClipboard('${copyMjpegURL}', this)">Copy MJPEG</button>
                     </div>
-                    <div class="url-chip">
-                      <span>${rtspURL}</span>
-                      <button class="copy-btn" onclick="copyToClipboard('${rtspURL}', this)">Copy RTSP</button>
+                    <div class="url-chip" title="${copyRtspURL}">
+                      <span>${copyRtspURL}</span>
+                      <button class="copy-btn" onclick="copyToClipboard('${copyRtspURL}', this)">Copy RTSP</button>
                     </div>
                   </div>
                 </div>
@@ -565,6 +596,11 @@
             if (badge) {
               badge.className = `badge ${getBadgeClass(cam.state)}`;
               badge.innerText = cam.state;
+            }
+            const authBadge = document.getElementById(`badge-auth-${cam.id}`);
+            if (authBadge) {
+              authBadge.className = `badge ${authBadgeClass}`;
+              authBadge.innerText = authBadgeLabel;
             }
             const clients = document.getElementById(`clients-${cam.id}`);
             if (clients) clients.innerText = cam.active_clients || 0;

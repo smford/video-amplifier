@@ -150,6 +150,10 @@ func (s *HTTPServer) handleCamerasList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !s.authorizeWebRequest(w, r) {
+		return
+	}
+
 	summaries := s.manager.Summaries()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(summaries)

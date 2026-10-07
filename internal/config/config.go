@@ -89,6 +89,8 @@ type ServerConfig struct {
 	AuthMode           AuthMode `yaml:"auth_mode"`  // "none", "custom", "passthrough"
 	DownstreamUsername string   `yaml:"downstream_username"`
 	DownstreamPassword string   `yaml:"downstream_password"`
+	WebUsername        string   `yaml:"web_username"` // Basic auth username for main dashboard/webpage
+	WebPassword        string   `yaml:"web_password"` // Basic auth password for main dashboard/webpage
 }
 
 // CameraConfig holds configuration for an individual camera stream.
@@ -196,6 +198,12 @@ func applyEnvOverrides(cfg *Config) {
 		if d, err := time.ParseDuration(val); err == nil {
 			cfg.Server.WriteTimeout = Duration(d)
 		}
+	}
+	if val := os.Getenv("VIDEO_AMPLIFIER_WEB_USERNAME"); val != "" {
+		cfg.Server.WebUsername = strings.TrimSpace(val)
+	}
+	if val := os.Getenv("VIDEO_AMPLIFIER_WEB_PASSWORD"); val != "" {
+		cfg.Server.WebPassword = strings.TrimSpace(val)
 	}
 }
 
@@ -328,6 +336,8 @@ server:
   write_timeout: 10s      # Network socket write timeout
   log_level: "INFO"       # Log level: DEBUG, INFO, WARN, ERROR
   log_format: "text"      # Log format: "text" or "json"
+  web_username: ""        # Optional: Basic auth username for main dashboard/web UI
+  web_password: ""        # Optional: Basic auth password for main dashboard/web UI
 
 cameras:
   # Example 1: 24/7 Security camera (always-on persistent ingest)

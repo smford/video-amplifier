@@ -519,5 +519,48 @@ func TestHTTPServer_DownstreamAuthModes(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_WebDashboardBasicAuth(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Server.WebUsername = "webadmin"
+	cfg.Server.WebPassword = "webpassword"
+
+	m := metrics.NewMetrics(nil)
+	mgr := upstream.NewManager(cfg, m, nil, nil)
+
+	server := NewHTTPServer(cfg, mgr, nil)
+
+	routes := []string{"/", "/ui", "/dashboard", "/cameras"}
+	for _, route := range routes {
+		// 1. Unauthenticated request -> 401 Unauthorized
+		unauthReq := httptest.NewRequest(http.MethodGet, route, nil)
+		unauthW := httptest.NewRecorder()
+		server.server.Handler.ServeHTTP(unauthW, unauthReq)
+		if unauthW.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 for %s unauthenticated, got %d", route, unauthW.Code)
+		}
+		if !strings.Contains(unauthW.Header().Get("WWW-Authenticate"), "Basic") {
+			t.Fatalf("expected WWW-Authenticate Basic header for %s, got %s", route, unauthW.Header().Get("WWW-Authenticate"))
+		}
+
+		// 2. Invalid credentials -> 401 Unauthorized
+		badReq := httptest.NewRequest(http.MethodGet, route, nil)
+		badReq.SetBasicAuth("wrong", "credentials")
+		badW := httptest.NewRecorder()
+		server.server.Handler.ServeHTTP(badW, badReq)
+		if badW.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 for %s with bad credentials, got %d", route, badW.Code)
+		}
+
+		// 3. Valid credentials -> 200 OK
+		validReq := httptest.NewRequest(http.MethodGet, route, nil)
+		validReq.SetBasicAuth("webadmin", "webpassword")
+		validW := httptest.NewRecorder()
+		server.server.Handler.ServeHTTP(validW, validReq)
+		if validW.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s with valid credentials, got %d", route, validW.Code)
+		}
+	}
+}
+
 
 
