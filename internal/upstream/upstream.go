@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -618,4 +619,35 @@ func (cs *CameraStream) BytesReceived() int64 {
 // ReportSuccess notifies the circuit breaker that upstream streaming is healthy.
 func (cs *CameraStream) ReportSuccess() {
 	cs.breaker.ReportSuccess()
+}
+
+// GetExpectedCredentials returns (username, password, required) for downstream authentication.
+func (cs *CameraStream) GetExpectedCredentials() (string, string, bool) {
+	switch cs.Config.AuthMode {
+	case config.AuthModeCustom:
+		return cs.Config.DownstreamUsername, cs.Config.DownstreamPassword, true
+
+	case config.AuthModePassthrough:
+		// Extract credentials from upstream URL
+		if u, err := url.Parse(cs.Config.UpstreamURL); err == nil && u.User != nil {
+			user := u.User.Username()
+			pass, _ := u.User.Password()
+			return user, pass, true
+		}
+		return "", "", false
+
+	case config.AuthModeNone:
+		fallthrough
+	default:
+		return "", "", false
+	}
+}
+
+// ValidateCredentials checks if the provided username and password match downstream requirements.
+func (cs *CameraStream) ValidateCredentials(user, pass string) bool {
+	expectedUser, expectedPass, required := cs.GetExpectedCredentials()
+	if !required {
+		return true // Auth is disabled
+	}
+	return user == expectedUser && pass == expectedPass
 }

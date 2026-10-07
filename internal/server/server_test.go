@@ -428,4 +428,96 @@ func TestHTTPServer_JSONHealthzAndONVIF(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_DownstreamAuthModes(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Cameras = []config.CameraConfig{
+		{
+			ID:                 "custom-auth-cam",
+			Name:               "Custom Auth Cam",
+			UpstreamURL:        "rtsp://upstreamuser:upstreampass@localhost/stream",
+			Mode:               config.ModeAlwaysOn,
+			AuthMode:           config.AuthModeCustom,
+			DownstreamUsername: "downstreamuser",
+			DownstreamPassword: "downstreampass",
+		},
+		{
+			ID:          "passthrough-cam",
+			Name:        "Passthrough Cam",
+			UpstreamURL: "rtsp://passuser:passsecret@localhost/stream",
+			Mode:        config.ModeAlwaysOn,
+			AuthMode:    config.AuthModePassthrough,
+		},
+		{
+			ID:          "open-cam",
+			Name:        "Open Cam",
+			UpstreamURL: "rtsp://localhost/stream",
+			Mode:        config.ModeAlwaysOn,
+			AuthMode:    config.AuthModeNone,
+		},
+	}
+	m := metrics.NewMetrics(nil)
+	mgr := upstream.NewManager(cfg, m, nil, nil)
+
+	// Pre-seed cached snapshot to avoid waiting on upstream decoder fallbacks
+	for _, id := range []string{"custom-auth-cam", "passthrough-cam", "open-cam"} {
+		if cam, ok := mgr.Get(id); ok {
+			cam.UpdateSnapshot([]byte("\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xDB\x00C\x00\xFF\xD9"))
+		}
+	}
+
+	server := NewHTTPServer(cfg, mgr, nil)
+
+	// 1. Custom Auth: Unauthenticated request should receive 401
+	unauthReq := httptest.NewRequest(http.MethodGet, "/cameras/custom-auth-cam/snapshot.jpg", nil)
+	unauthW := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(unauthW, unauthReq)
+	if unauthW.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated request, got %d", unauthW.Code)
+	}
+
+	// Custom Auth: Invalid credentials -> 401
+	badAuthReq := httptest.NewRequest(http.MethodGet, "/cameras/custom-auth-cam/snapshot.jpg", nil)
+	badAuthReq.SetBasicAuth("wrong", "credentials")
+	badAuthW := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(badAuthW, badAuthReq)
+	if badAuthW.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for bad credentials, got %d", badAuthW.Code)
+	}
+
+	// Custom Auth: Valid credentials -> Passes auth (no snapshot frame yet -> 404, but NOT 401)
+	validAuthReq := httptest.NewRequest(http.MethodGet, "/cameras/custom-auth-cam/snapshot.jpg", nil)
+	validAuthReq.SetBasicAuth("downstreamuser", "downstreampass")
+	validAuthW := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(validAuthW, validAuthReq)
+	if validAuthW.Code == http.StatusUnauthorized {
+		t.Fatalf("expected request with valid custom auth to pass auth check, got 401")
+	}
+
+	// 2. Passthrough Auth: Unauthenticated request -> 401
+	passUnauthReq := httptest.NewRequest(http.MethodGet, "/cameras/passthrough-cam/snapshot.jpg", nil)
+	passUnauthW := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(passUnauthW, passUnauthReq)
+	if passUnauthW.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated passthrough request, got %d", passUnauthW.Code)
+	}
+
+	// Passthrough Auth: Valid upstream credentials -> Passes auth
+	passValidReq := httptest.NewRequest(http.MethodGet, "/cameras/passthrough-cam/snapshot.jpg", nil)
+	passValidReq.SetBasicAuth("passuser", "passsecret")
+	passValidW := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(passValidW, passValidReq)
+	if passValidW.Code == http.StatusUnauthorized {
+		t.Fatalf("expected request with passthrough auth to pass auth check, got 401")
+	}
+
+	// 3. Open Cam: Unauthenticated request -> Passes auth directly
+	openReq := httptest.NewRequest(http.MethodGet, "/cameras/open-cam/snapshot.jpg", nil)
+	openW := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(openW, openReq)
+	if openW.Code == http.StatusUnauthorized {
+		t.Fatalf("expected open-cam to allow unauthenticated request, got 401")
+	}
+}
+
+
 

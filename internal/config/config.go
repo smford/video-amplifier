@@ -68,29 +68,44 @@ func (d Duration) MarshalYAML() (interface{}, error) {
 	return time.Duration(d).String(), nil
 }
 
+// AuthMode represents downstream client authentication policy.
+type AuthMode string
+
+const (
+	AuthModeNone        AuthMode = "none"        // No credentials required
+	AuthModeCustom      AuthMode = "custom"      // Downstream-specific username & password
+	AuthModePassthrough AuthMode = "passthrough" // Mirror upstream credentials
+)
+
 // ServerConfig holds HTTP, RTSP, and Metrics server settings.
 type ServerConfig struct {
-	HTTPPort     int      `yaml:"http_port"`
-	RTSPPort     int      `yaml:"rtsp_port"`
-	MetricsPort  int      `yaml:"metrics_port"`
-	ReadTimeout  Duration `yaml:"read_timeout"`
-	WriteTimeout Duration `yaml:"write_timeout"`
-	LogLevel     string   `yaml:"log_level"`
-	LogFormat    string   `yaml:"log_format"` // "text" or "json"
+	HTTPPort           int      `yaml:"http_port"`
+	RTSPPort           int      `yaml:"rtsp_port"`
+	MetricsPort        int      `yaml:"metrics_port"`
+	ReadTimeout        Duration `yaml:"read_timeout"`
+	WriteTimeout       Duration `yaml:"write_timeout"`
+	LogLevel           string   `yaml:"log_level"`
+	LogFormat          string   `yaml:"log_format"` // "text" or "json"
+	AuthMode           AuthMode `yaml:"auth_mode"`  // "none", "custom", "passthrough"
+	DownstreamUsername string   `yaml:"downstream_username"`
+	DownstreamPassword string   `yaml:"downstream_password"`
 }
 
 // CameraConfig holds configuration for an individual camera stream.
 type CameraConfig struct {
-	ID               string        `yaml:"id"`
-	Name             string        `yaml:"name"`
-	UpstreamURL      string        `yaml:"upstream_url"`
-	Mode             Mode          `yaml:"mode"`
-	IdleTimeout      Duration      `yaml:"idle_timeout"`
-	ClientBufferSize int           `yaml:"client_buffer_size"`
-	RetryInterval    Duration      `yaml:"retry_interval"`
-	RTSPTransport    RTSPTransport `yaml:"rtsp_transport"`
-	ClientTimeout    Duration      `yaml:"client_timeout"`
-	SnapshotURL      string        `yaml:"snapshot_url"`
+	ID                 string        `yaml:"id"`
+	Name               string        `yaml:"name"`
+	UpstreamURL        string        `yaml:"upstream_url"`
+	Mode               Mode          `yaml:"mode"`
+	IdleTimeout        Duration      `yaml:"idle_timeout"`
+	ClientBufferSize   int           `yaml:"client_buffer_size"`
+	RetryInterval      Duration      `yaml:"retry_interval"`
+	RTSPTransport      RTSPTransport `yaml:"rtsp_transport"`
+	ClientTimeout      Duration      `yaml:"client_timeout"`
+	SnapshotURL        string        `yaml:"snapshot_url"`
+	AuthMode           AuthMode      `yaml:"auth_mode"` // "none", "custom", "passthrough"
+	DownstreamUsername string        `yaml:"downstream_username"`
+	DownstreamPassword string        `yaml:"downstream_password"`
 
 	// GOP-Aware Intelligent Frame Eviction (ITEM 1)
 	LatencyWatermark Duration      `yaml:"latency_watermark"` // Max buffer latency before eviction (default: 1500ms)
@@ -272,6 +287,27 @@ func (c *Config) ValidateAndSetDefaults() error {
 		if cam.SyntheticKeepAlives == nil {
 			defaultTrue := true
 			cam.SyntheticKeepAlives = &defaultTrue
+		}
+
+		if cam.AuthMode == "" {
+			if c.Server.AuthMode != "" {
+				cam.AuthMode = c.Server.AuthMode
+				if cam.DownstreamUsername == "" {
+					cam.DownstreamUsername = c.Server.DownstreamUsername
+				}
+				if cam.DownstreamPassword == "" {
+					cam.DownstreamPassword = c.Server.DownstreamPassword
+				}
+			} else {
+				cam.AuthMode = AuthModeNone
+			}
+		}
+
+		switch cam.AuthMode {
+		case AuthModeNone, AuthModePassthrough, AuthModeCustom:
+			// valid
+		default:
+			return fmt.Errorf("camera %q: invalid auth_mode %q (must be none, custom, or passthrough)", cam.ID, cam.AuthMode)
 		}
 	}
 

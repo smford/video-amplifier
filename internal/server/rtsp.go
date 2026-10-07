@@ -11,6 +11,7 @@ import (
 	"github.com/bluenviron/gortsplib/v5"
 	"github.com/bluenviron/gortsplib/v5/pkg/base"
 	"github.com/bluenviron/gortsplib/v5/pkg/description"
+	"github.com/bluenviron/gortsplib/v5/pkg/liberrors"
 	"github.com/google/uuid"
 	"github.com/smford/video-amplifier/internal/config"
 	"github.com/smford/video-amplifier/internal/metrics"
@@ -192,6 +193,15 @@ func (s *RTSPServer) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*bas
 		return &base.Response{StatusCode: base.StatusNotFound}, nil, nil
 	}
 
+	// Downstream client authentication check (AuthMode: none, custom, or passthrough)
+	if expUser, expPass, required := cam.GetExpectedCredentials(); required {
+		if !ctx.Conn.VerifyCredentials(ctx.Request, expUser, expPass) {
+			return &base.Response{
+				StatusCode: base.StatusUnauthorized,
+			}, nil, liberrors.ErrServerAuth{}
+		}
+	}
+
 	// If camera is on-demand and not connected yet, trigger connection and wait
 	if cam.Config.Mode == config.ModeOnDemand {
 		cam.OnClientConnected(context.Background(), "rtsp")
@@ -235,6 +245,18 @@ func (s *RTSPServer) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*bas
 // OnSetup handles SETUP requests.
 func (s *RTSPServer) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Response, *gortsplib.ServerStream, error) {
 	camID := strings.TrimPrefix(ctx.Path, "/")
+
+	if s.manager != nil {
+		if cam, ok := s.manager.Get(camID); ok {
+			if expUser, expPass, required := cam.GetExpectedCredentials(); required {
+				if !ctx.Conn.VerifyCredentials(ctx.Request, expUser, expPass) {
+					return &base.Response{
+						StatusCode: base.StatusUnauthorized,
+					}, nil, liberrors.ErrServerAuth{}
+				}
+			}
+		}
+	}
 
 	s.mu.RLock()
 	stream, exists := s.streams[camID]

@@ -126,14 +126,18 @@ cameras:
     degradation_step: true       # Drop non-ref frames prior to full keyframe eviction
     disconnect_timeout: "3s"     # Time without packets before synthetic keep-alive injection
     synthetic_keepalives: true   # Maintain downstream NVR sessions during upstream dropouts
+    auth_mode: "custom"          # "none" (default), "custom", or "passthrough"
+    downstream_username: "viewer"
+    downstream_password: "viewsecret"
 
   - id: "workshop-mjpeg"
     name: "Workshop Overhead"
-    upstream_url: "http://192.168.1.60/video.mjpg"
+    upstream_url: "http://admin:pass@192.168.1.60/video.mjpg"
     mode: "on-demand"
     idle_timeout: "30s"
     client_buffer_size: 30
     retry_interval: "5s"
+    auth_mode: "passthrough"     # Require clients to authenticate with upstream credentials ("admin" / "pass")
 ```
 
 ### Environment Variable Overrides

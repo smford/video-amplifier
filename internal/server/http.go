@@ -188,6 +188,11 @@ func (s *HTTPServer) handleCameraRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate downstream credentials (AuthMode: none, custom, or passthrough)
+	if !s.authorizeCameraRequest(w, r, cam) {
+		return
+	}
+
 	action := parts[1]
 	switch action {
 	case "mjpeg", "stream.mjpg":
@@ -251,6 +256,9 @@ func (s *HTTPServer) handleRootSnapshot(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf("camera %q not found", camID), http.StatusNotFound)
 		return
 	}
+	if !s.authorizeCameraRequest(w, r, cam) {
+		return
+	}
 	s.serveSnapshot(w, r, cam)
 }
 
@@ -270,6 +278,9 @@ func (s *HTTPServer) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 
 		cam, ok := s.manager.Get(camID)
 		if ok {
+			if !s.authorizeCameraRequest(w, r, cam) {
+				return
+			}
 			switch action {
 			case "mjpeg", "stream.mjpg":
 				s.streamMJPEG(w, r, cam)
@@ -291,6 +302,24 @@ func (s *HTTPServer) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.NotFound(w, r)
+}
+
+// authorizeCameraRequest validates downstream HTTP credentials against camera authentication policy.
+func (s *HTTPServer) authorizeCameraRequest(w http.ResponseWriter, r *http.Request, cam *upstream.CameraStream) bool {
+	expectedUser, _, required := cam.GetExpectedCredentials()
+	if !required {
+		return true // Auth is disabled
+	}
+
+	user, pass, ok := r.BasicAuth()
+	if !ok || !cam.ValidateCredentials(user, pass) {
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="video-amplifier (%s)"`, cam.Config.Name))
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return false
+	}
+
+	_ = expectedUser
+	return true
 }
 
 // streamMJPEG streams multipart/x-mixed-replace JPEG frames to a downstream HTTP client.
