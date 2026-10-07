@@ -369,3 +369,63 @@ func TestHTTPServer_WHEPAndFMP4Routes(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_JSONHealthzAndONVIF(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Cameras = []config.CameraConfig{
+		{
+			ID:          "onvif-cam",
+			Name:        "ONVIF Cam",
+			UpstreamURL: "rtsp://localhost/test",
+			Mode:        config.ModeAlwaysOn,
+		},
+	}
+	m := metrics.NewMetrics(nil)
+	mgr := upstream.NewManager(cfg, m, nil, nil)
+	_ = mgr.Start(context.Background())
+	defer mgr.Stop()
+
+	server := NewHTTPServer(cfg, mgr, nil)
+
+	// Test GET /healthz JSON payload
+	hReq := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	hW := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(hW, hReq)
+	if hW.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /healthz, got %d", hW.Code)
+	}
+
+	var healthResp HealthResponse
+	if err := json.Unmarshal(hW.Body.Bytes(), &healthResp); err != nil {
+		t.Fatalf("failed to unmarshal healthz JSON: %v", err)
+	}
+	if healthResp.Status != "healthy" {
+		t.Fatalf("expected status healthy, got %s", healthResp.Status)
+	}
+	if len(healthResp.Cameras) != 1 || healthResp.Cameras[0].ID != "onvif-cam" {
+		t.Fatalf("unexpected cameras in healthz response: %+v", healthResp.Cameras)
+	}
+
+	// Test GET /cameras/onvif-cam/onvif cached capabilities
+	onvifReq := httptest.NewRequest(http.MethodGet, "/cameras/onvif-cam/onvif", nil)
+	onvifW := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(onvifW, onvifReq)
+	if onvifW.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /onvif, got %d", onvifW.Code)
+	}
+	if !strings.Contains(onvifW.Body.String(), "Capabilities") {
+		t.Fatalf("expected ONVIF Capabilities XML, got %s", onvifW.Body.String())
+	}
+
+	// Test POST GetProfiles
+	profReq := httptest.NewRequest(http.MethodPost, "/cameras/onvif-cam/onvif", strings.NewReader("<GetProfiles/>"))
+	profW := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(profW, profReq)
+	if profW.Code != http.StatusOK {
+		t.Fatalf("expected 200 for GetProfiles, got %d", profW.Code)
+	}
+	if !strings.Contains(profW.Body.String(), "GetProfilesResponse") {
+		t.Fatalf("expected ONVIF GetProfilesResponse XML, got %s", profW.Body.String())
+	}
+}
+
+

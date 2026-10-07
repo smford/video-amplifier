@@ -29,6 +29,7 @@ type HTTPServer struct {
 
 	mu        sync.RWMutex
 	clientIDs map[string]context.CancelFunc
+	startTime time.Time
 }
 
 // NewHTTPServer initializes the HTTP streaming server.
@@ -44,6 +45,7 @@ func NewHTTPServer(cfg *config.Config, manager *upstream.Manager, logger *slog.L
 		whep:      egress.NewWHEPManager(logger),
 		fmp4:      egress.NewFMP4Manager(logger),
 		clientIDs: make(map[string]context.CancelFunc),
+		startTime: time.Now(),
 	}
 
 	mux := http.NewServeMux()
@@ -92,10 +94,42 @@ func (s *HTTPServer) Stop(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
-// handleHealthz handles liveness probes.
+// handleHealthz handles liveness probes returning JSON detailing stream resolution, GOP interval, and uptime.
 func (s *HTTPServer) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	uptime := time.Since(s.startTime)
+
+	var camHealth []CameraHealthDetail
+	if s.manager != nil {
+		for _, cam := range s.manager.List() {
+			bitrate, fps := cam.LiveTelemetry()
+			gop := cam.GOPInterval()
+			gopStr := "n/a"
+			if gop > 0 {
+				gopStr = gop.Round(time.Millisecond).String()
+			}
+			camHealth = append(camHealth, CameraHealthDetail{
+				ID:          cam.Config.ID,
+				Name:        cam.Config.Name,
+				State:       string(cam.State()),
+				Resolution:  cam.Resolution(),
+				GOPInterval: gopStr,
+				BitrateBps:  bitrate,
+				FPS:         fps,
+				Clients:     cam.TotalActiveClients(),
+			})
+		}
+	}
+
+	resp := HealthResponse{
+		Status:    "healthy",
+		Uptime:    uptime.Round(time.Second).String(),
+		UptimeSec: int64(uptime.Seconds()),
+		Cameras:   camHealth,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("OK\n"))
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // handleReadyz handles readiness probes.
@@ -170,9 +204,32 @@ func (s *HTTPServer) handleCameraRoute(w http.ResponseWriter, r *http.Request) {
 		s.fmp4.HandleFMP4Stream(w, r, cam)
 	case "ws", "fmp4.ws":
 		s.fmp4.HandleWebSocketStream(w, r, cam)
+	case "onvif", "device_service":
+		s.handleONVIF(w, r, cam)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// handleONVIF serves cached ONVIF XML responses (ITEM 7: ONVIF & Metadata Decoupling).
+func (s *HTTPServer) handleONVIF(w http.ResponseWriter, r *http.Request, cam *upstream.CameraStream) {
+	w.Header().Set("Content-Type", "application/soap+xml; charset=utf-8")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// If request body contains GetProfiles, return cached profiles
+	buf := make([]byte, 1024)
+	n, _ := r.Body.Read(buf)
+	bodyStr := string(buf[:n])
+
+	if strings.Contains(bodyStr, "GetProfiles") {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(cam.GetONVIFProfiles())
+		return
+	}
+
+	// Default to cached capabilities
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(cam.GetONVIFCapabilities())
 }
 
 // handleRootSnapshot handles /snapshot.jpg?camera={id}

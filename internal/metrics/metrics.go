@@ -16,8 +16,11 @@ type Metrics struct {
 	upstreamConnected     *prometheus.GaugeVec
 	upstreamReconnects    *prometheus.CounterVec
 	upstreamBytesReceived *prometheus.CounterVec
+	upstreamBitrateBps    *prometheus.GaugeVec
+	upstreamFPS           *prometheus.GaugeVec
 	downstreamActive      *prometheus.GaugeVec
 	downstreamDropped     *prometheus.CounterVec
+	downstreamLagMs       *prometheus.GaugeVec
 	gopEvictions          *prometheus.CounterVec
 	syntheticFrames       *prometheus.CounterVec
 
@@ -57,6 +60,20 @@ func NewMetrics(reg *prometheus.Registry) *Metrics {
 			},
 			[]string{"camera"},
 		),
+		upstreamBitrateBps: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "video_amplifier_upstream_bitrate_bps",
+				Help: "Current upstream camera bitrate in bits per second.",
+			},
+			[]string{"camera"},
+		),
+		upstreamFPS: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "video_amplifier_upstream_fps",
+				Help: "Current upstream camera frame rate in frames per second.",
+			},
+			[]string{"camera"},
+		),
 		downstreamActive: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "video_amplifier_downstream_active_clients",
@@ -68,6 +85,13 @@ func NewMetrics(reg *prometheus.Registry) *Metrics {
 			prometheus.CounterOpts{
 				Name: "video_amplifier_downstream_dropped_frames_total",
 				Help: "Total frames dropped for a downstream client due to backpressure.",
+			},
+			[]string{"camera", "client_id"},
+		),
+		downstreamLagMs: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "video_amplifier_downstream_client_lag_ms",
+				Help: "Current estimated buffer latency/lag in milliseconds for downstream client.",
 			},
 			[]string{"camera", "client_id"},
 		),
@@ -91,8 +115,11 @@ func NewMetrics(reg *prometheus.Registry) *Metrics {
 		m.upstreamConnected,
 		m.upstreamReconnects,
 		m.upstreamBytesReceived,
+		m.upstreamBitrateBps,
+		m.upstreamFPS,
 		m.downstreamActive,
 		m.downstreamDropped,
+		m.downstreamLagMs,
 		m.gopEvictions,
 		m.syntheticFrames,
 	)
@@ -148,6 +175,21 @@ func (m *Metrics) IncDownstreamDropped(camera string, clientID string) {
 	m.downstreamDropped.WithLabelValues(camera, clientID).Inc()
 }
 
+// SetUpstreamBitrate sets the current estimated upstream bitrate in bps.
+func (m *Metrics) SetUpstreamBitrate(camera string, bps float64) {
+	m.upstreamBitrateBps.WithLabelValues(camera).Set(bps)
+}
+
+// SetUpstreamFPS sets the current estimated upstream frames per second.
+func (m *Metrics) SetUpstreamFPS(camera string, fps float64) {
+	m.upstreamFPS.WithLabelValues(camera).Set(fps)
+}
+
+// SetDownstreamLagMs sets the client buffer lag in milliseconds.
+func (m *Metrics) SetDownstreamLagMs(camera string, clientID string, lagMs float64) {
+	m.downstreamLagMs.WithLabelValues(camera, clientID).Set(lagMs)
+}
+
 // IncGOPEvictions increments the GOP eviction count for a client.
 func (m *Metrics) IncGOPEvictions(camera string, clientID string) {
 	m.gopEvictions.WithLabelValues(camera, clientID).Inc()
@@ -161,6 +203,7 @@ func (m *Metrics) IncSyntheticFrames(camera string) {
 // RemoveClientMetrics removes the client_id series to prevent memory leaks when client disconnects.
 func (m *Metrics) RemoveClientMetrics(camera string, clientID string) {
 	m.downstreamDropped.DeleteLabelValues(camera, clientID)
+	m.downstreamLagMs.DeleteLabelValues(camera, clientID)
 	m.gopEvictions.DeleteLabelValues(camera, clientID)
 }
 

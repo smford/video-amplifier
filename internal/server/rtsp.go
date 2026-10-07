@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/smford/video-amplifier/internal/config"
 	"github.com/smford/video-amplifier/internal/metrics"
+	"github.com/smford/video-amplifier/internal/ringbuffer"
 	"github.com/smford/video-amplifier/internal/rtpengine"
 	"github.com/smford/video-amplifier/internal/upstream"
 )
@@ -22,6 +23,7 @@ type rtspSessionData struct {
 	cameraID        string
 	clientID        string
 	evictionTracker *rtpengine.ClientEvictionTracker
+	cursor          *ringbuffer.ReaderCursor
 	lastWriteErr    time.Time
 }
 
@@ -254,6 +256,7 @@ func (s *RTSPServer) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Respon
 	clientID := uuid.New().String()[:8]
 
 	var tracker *rtpengine.ClientEvictionTracker
+	var cursor *ringbuffer.ReaderCursor
 	if s.manager != nil {
 		if cam, ok := s.manager.Get(camID); ok {
 			cam.IncRTSPClient(context.Background())
@@ -263,6 +266,9 @@ func (s *RTSPServer) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Respon
 				degStep = *cam.Config.DegradationStep
 			}
 			tracker = rtpengine.NewClientEvictionTracker(clientID, watermark, degStep)
+			if ring := cam.SharedRing(); ring != nil {
+				cursor = ring.NewReaderCursor(clientID, watermark)
+			}
 		}
 	}
 
@@ -271,6 +277,7 @@ func (s *RTSPServer) OnPlay(ctx *gortsplib.ServerHandlerOnPlayCtx) (*base.Respon
 		cameraID:        camID,
 		clientID:        clientID,
 		evictionTracker: tracker,
+		cursor:          cursor,
 	}
 	s.sessionsMu.Unlock()
 
@@ -294,6 +301,9 @@ func (s *RTSPServer) OnSessionClose(ctx *gortsplib.ServerHandlerOnSessionCloseCt
 	if exists && s.manager != nil {
 		if cam, ok := s.manager.Get(sessionData.cameraID); ok {
 			cam.DecRTSPClient()
+			if ring := cam.SharedRing(); ring != nil {
+				ring.RemoveReaderCursor(sessionData.clientID)
+			}
 			s.metrics.RemoveClientMetrics(cam.Config.Name, sessionData.clientID)
 		}
 		s.logger.Info("Downstream RTSP client disconnected",
@@ -321,6 +331,10 @@ func (s *RTSPServer) OnStreamWriteError(ctx *gortsplib.ServerHandlerOnStreamWrit
 		if cam, ok := s.manager.Get(sessionData.cameraID); ok {
 			s.metrics.IncDownstreamDropped(cam.Config.Name, sessionData.clientID)
 			s.metrics.IncGOPEvictions(cam.Config.Name, sessionData.clientID)
+			if sessionData.cursor != nil {
+				lagMs := float64(sessionData.cursor.LagMs())
+				s.metrics.SetDownstreamLagMs(cam.Config.Name, sessionData.clientID, lagMs)
+			}
 		}
 		s.logger.Warn("Downstream RTSP client stalled (slow consumer drop, GOP eviction triggered)",
 			slog.String("camera_id", sessionData.cameraID),

@@ -89,6 +89,11 @@ func (d *RTSPDriver) Start(ctx context.Context) error {
 		client.Protocol = &proto
 	}
 
+	// Start RTSP client connection
+	if err := client.Start(); err != nil {
+		return fmt.Errorf("rtsp client start failed: %w", err)
+	}
+
 	d.mu.Lock()
 	d.client = client
 	d.mu.Unlock()
@@ -101,11 +106,6 @@ func (d *RTSPDriver) Start(ctx context.Context) error {
 		}
 		d.mu.Unlock()
 	}()
-
-	// Start RTSP client connection
-	if err := client.Start(); err != nil {
-		return fmt.Errorf("rtsp client start failed: %w", err)
-	}
 
 	// Describe stream (ITEM 3: Cache SDP/Describe body in memory)
 	desc, _, err := client.Describe(u)
@@ -170,13 +170,32 @@ func (d *RTSPDriver) Start(ctx context.Context) error {
 
 	d.lastPacketTime.Store(time.Now().UnixNano())
 
+	var lastKeyframeTime time.Time
+	var frameCount int64
+	var byteCount int64
+	lastStatWindow := time.Now()
+
 	// Handle RTP packet arrival
 	client.OnPacketRTPAny(func(medi *description.Media, forma format.Format, pkt *rtp.Packet) {
 		now := time.Now()
 		d.lastPacketTime.Store(now.UnixNano())
 
 		// Increment upstream bytes
-		d.stream.AddBytesReceived(int64(len(pkt.Payload) + 12))
+		pktBytes := int64(len(pkt.Payload) + 12)
+		d.stream.AddBytesReceived(pktBytes)
+		byteCount += pktBytes
+		frameCount++
+
+		// Calculate 1s sliding window bitrate and fps
+		if now.Sub(lastStatWindow) >= 1*time.Second {
+			durationSec := now.Sub(lastStatWindow).Seconds()
+			bitrate := float64(byteCount*8) / durationSec
+			fps := float64(frameCount) / durationSec
+			d.stream.UpdateTelemetry(bitrate, fps)
+			byteCount = 0
+			frameCount = 0
+			lastStatWindow = now
+		}
 
 		// If MJPEG format present, decode to cache snapshot
 		if mjpegDecoder != nil {
@@ -187,16 +206,42 @@ func (d *RTSPDriver) Start(ctx context.Context) error {
 			}
 		}
 
-		if serverStream != nil {
-			// Inspect packet for keyframe/GOP info
-			var codecHint rtpengine.CodecType
-			if _, ok := forma.(*format.H264); ok {
-				codecHint = rtpengine.CodecH264
-			} else if _, ok := forma.(*format.H265); ok {
-				codecHint = rtpengine.CodecH265
+		// Inspect packet for keyframe/GOP info and resolution
+		var codecHint rtpengine.CodecType
+		if h264Fmt, ok := forma.(*format.H264); ok {
+			codecHint = rtpengine.CodecH264
+			if d.stream.Resolution() == "unknown" && len(h264Fmt.SPS) > 0 {
+				var sps h264.SPS
+				if err := sps.Unmarshal(h264Fmt.SPS); err == nil {
+					d.stream.SetResolution(fmt.Sprintf("%dx%d", sps.Width(), sps.Height()))
+				}
 			}
-			frameInfo := rtpengine.InspectPacket(pkt.Payload, codecHint)
+		} else if _, ok := forma.(*format.H265); ok {
+			codecHint = rtpengine.CodecH265
+		}
+		frameInfo := rtpengine.InspectPacket(pkt.Payload, codecHint)
 
+		// Measure GOP interval between keyframes
+		if frameInfo.IsKeyframe {
+			if !lastKeyframeTime.IsZero() {
+				gop := now.Sub(lastKeyframeTime)
+				d.stream.SetGOPInterval(gop)
+			}
+			lastKeyframeTime = now
+		}
+
+		// Differentiate ONVIF / metadata track vs video / audio media (ITEM 7)
+		isMetadata := (medi.Type == "application" || medi.Type == "metadata")
+
+		if isMetadata && serverStream != nil {
+			// Forward timed ONVIF XML/RTP metadata packet directly
+			if err := serverStream.WritePacketRTP(medi, pkt); err != nil {
+				d.stream.logger.Debug("ServerStream write metadata packet error", slog.Any("error", err))
+			}
+			return
+		}
+
+		if serverStream != nil {
 			// Rebase sequence numbers and timestamps to prevent downstream player crashes
 			outPkt, drop := d.rebaser.RebaseProcess(pkt, frameInfo.IsKeyframe, now)
 			if drop || outPkt == nil {
@@ -207,7 +252,7 @@ func (d *RTSPDriver) Start(ctx context.Context) error {
 				d.stream.logger.Debug("ServerStream write packet error", slog.Any("error", err))
 			}
 
-			// Broadcast rebased RTP packet to WebRTC (WHEP) and fMP4 subscribers (ITEM 4)
+			// Broadcast rebased RTP packet to WebRTC (WHEP), fMP4, and shared ring buffer (ITEM 4 & ITEM 5)
 			d.stream.BroadcastRTPPacket(outPkt)
 		}
 	})

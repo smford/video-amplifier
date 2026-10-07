@@ -162,25 +162,27 @@ cameras:
 | `DELETE` | `/cameras/{id}/whep/{session}` | Terminate active WHEP WebRTC session |
 | `GET` | `/cameras/{id}/fmp4`, `/live.mp4` | **Fragmented MP4**: Chunked transfer stream (`video/mp4`) for MSE and browser `<video>` |
 | `GET` | `/cameras/{id}/ws` | **fMP4 over WebSockets**: Low-overhead binary stream for WebSocket-based players |
+| `GET`, `POST` | `/cameras/{id}/onvif` | **ONVIF Metadata & Profiles**: Decoupled ONVIF capabilities and profile cache (`application/soap+xml`) |
 | `GET` | `/{id}/mjpeg` | Short alias for MJPEG stream |
 | `GET` | `/{id}/snapshot.jpg` | Short alias for snapshot |
 | `GET` | `/{id}/fmp4` | Short alias for fMP4 stream |
 | `GET` | `/{id}/whep` | Short alias for WHEP endpoint |
+| `GET` | `/{id}/onvif` | Short alias for ONVIF endpoint |
 | `GET` | `/cameras` | JSON list of configured cameras and live metrics |
 | `GET` | `/cameras/{id}` | JSON status for a single camera |
-| `GET` | `/healthz` | Liveness probe (`200 OK`) |
+| `GET` | `/healthz` | **Detailed JSON Health**: Uptime, per-camera resolution, GOP interval, bitrate, and FPS |
 | `GET` | `/readyz` | Readiness probe (`200 OK` / `503 Service Unavailable`) |
 
 ### RTSP Endpoints (`:8554`)
 | Path | Description |
 |---|---|
-| `rtsp://<host>:8554/<camera_id>` | High-performance RTSP relay stream for NVRs, VLC, Home Assistant |
+| `rtsp://<host>:8554/<camera_id>` | High-performance RTSP relay stream for NVRs, VLC, Home Assistant (with timed ONVIF XML metadata track pass-through) |
 
 ### Observability Endpoints (`:9090`)
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/metrics` | Prometheus metrics scrape target |
-| `GET` | `/healthz` | Liveness probe |
+| `GET` | `/metrics` | Prometheus metrics scrape target (including `upstream_bitrate_bps`, `upstream_fps`, `downstream_client_lag_ms`, `gop_evictions_total`, and `synthetic_frames_injected_total`) |
+| `GET` | `/healthz` | Detailed JSON Health endpoint |
 | `GET` | `/readyz` | Readiness probe |
 
 ---

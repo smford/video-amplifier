@@ -3,6 +3,7 @@ package upstream
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -49,6 +50,7 @@ type CameraStream struct {
 	activeClientsMu sync.RWMutex
 	mjpegClients    map[string]*ringbuffer.RingBuffer[[]byte]
 	rtpClients      map[string]*ringbuffer.RingBuffer[*rtp.Packet]
+	sharedRing      *ringbuffer.SharedRingBuffer
 	rtspClientCount int
 
 	// Idle shutdown timer for on-demand feeds
@@ -60,10 +62,20 @@ type CameraStream struct {
 	lastSnapshot []byte
 	snapshotTime time.Time
 
-	// Stats
+	// Stats and Telemetry (ITEM 5 & ITEM 6)
 	bytesReceived atomic.Int64
 	reconnects    atomic.Int64
 	lastConnected atomic.Int64 // Unix timestamp
+	resolution    string
+	gopInterval   time.Duration
+	lastBitrate   atomic.Int64
+	lastFPS       atomic.Int64
+	telemetryMu   sync.RWMutex
+
+	// ONVIF Decoupling Cache (ITEM 7)
+	onvifMu           sync.RWMutex
+	onvifCapabilities []byte
+	onvifProfiles     []byte
 
 	// Concrete driver (RTSP or MJPEG)
 	driver Driver
@@ -100,6 +112,7 @@ func NewCameraStream(cfg config.CameraConfig, m *metrics.Metrics, logger *slog.L
 		state:        StateIdle,
 		mjpegClients: make(map[string]*ringbuffer.RingBuffer[[]byte]),
 		rtpClients:   make(map[string]*ringbuffer.RingBuffer[*rtp.Packet]),
+		sharedRing:   ringbuffer.NewSharedRingBuffer(cfg.ClientBufferSize * 4),
 	}
 
 	return cs
@@ -367,8 +380,22 @@ func (cs *CameraStream) UnsubscribeRTP(clientID string) {
 	}
 }
 
-// BroadcastRTPPacket delivers an RTP packet to all registered RTP listeners (WHEP / fMP4).
+// SharedRing returns the shared circular packet ring buffer for zero-copy streaming.
+func (cs *CameraStream) SharedRing() *ringbuffer.SharedRingBuffer {
+	return cs.sharedRing
+}
+
+// BroadcastRTPPacket delivers an RTP packet to the shared ring buffer and all legacy queues.
 func (cs *CameraStream) BroadcastRTPPacket(pkt *rtp.Packet) {
+	if pkt == nil {
+		return
+	}
+
+	// ITEM 5: Zero-copy single shared circular ring buffer
+	if cs.sharedRing != nil {
+		cs.sharedRing.WritePacket(pkt)
+	}
+
 	cs.activeClientsMu.RLock()
 	defer cs.activeClientsMu.RUnlock()
 
@@ -379,6 +406,88 @@ func (cs *CameraStream) BroadcastRTPPacket(pkt *rtp.Packet) {
 			}
 		}
 	}
+}
+
+// SetResolution records the detected video stream resolution (e.g. "1920x1080").
+func (cs *CameraStream) SetResolution(res string) {
+	cs.telemetryMu.Lock()
+	defer cs.telemetryMu.Unlock()
+	cs.resolution = res
+}
+
+// Resolution returns the detected video stream resolution.
+func (cs *CameraStream) Resolution() string {
+	cs.telemetryMu.RLock()
+	defer cs.telemetryMu.RUnlock()
+	if cs.resolution == "" {
+		return "unknown"
+	}
+	return cs.resolution
+}
+
+// SetGOPInterval records the measured interval between IDR keyframes.
+func (cs *CameraStream) SetGOPInterval(gop time.Duration) {
+	cs.telemetryMu.Lock()
+	defer cs.telemetryMu.Unlock()
+	cs.gopInterval = gop
+}
+
+// GOPInterval returns the measured interval between IDR keyframes.
+func (cs *CameraStream) GOPInterval() time.Duration {
+	cs.telemetryMu.RLock()
+	defer cs.telemetryMu.RUnlock()
+	return cs.gopInterval
+}
+
+// UpdateTelemetry updates live bitrate and FPS estimates.
+func (cs *CameraStream) UpdateTelemetry(bitrateBps float64, fps float64) {
+	cs.lastBitrate.Store(int64(bitrateBps))
+	cs.lastFPS.Store(int64(fps))
+	if cs.metrics != nil {
+		cs.metrics.SetUpstreamBitrate(cs.Config.Name, bitrateBps)
+		cs.metrics.SetUpstreamFPS(cs.Config.Name, fps)
+	}
+}
+
+// LiveTelemetry returns current bitrate and FPS.
+func (cs *CameraStream) LiveTelemetry() (bitrateBps int64, fps int64) {
+	return cs.lastBitrate.Load(), cs.lastFPS.Load()
+}
+
+// SetONVIFCapabilities caches the ONVIF GetCapabilities response XML payload.
+func (cs *CameraStream) SetONVIFCapabilities(payload []byte) {
+	cs.onvifMu.Lock()
+	defer cs.onvifMu.Unlock()
+	cs.onvifCapabilities = append([]byte(nil), payload...)
+}
+
+// GetONVIFCapabilities returns the cached ONVIF GetCapabilities XML payload.
+func (cs *CameraStream) GetONVIFCapabilities() []byte {
+	cs.onvifMu.RLock()
+	defer cs.onvifMu.RUnlock()
+	if len(cs.onvifCapabilities) == 0 {
+		// Return generic cached capability payload if none cached
+		return []byte(fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><tt:Capabilities xmlns:tt="http://www.onvif.org/ver10/schema"><tt:Device><tt:XAddr>http://video-amplifier/cameras/%s/onvif</tt:XAddr></tt:Device><tt:Media><tt:XAddr>http://video-amplifier/cameras/%s/onvif</tt:XAddr><tt:RTSPStreaming>true</tt:RTSPStreaming></tt:Media></tt:Capabilities>`, cs.Config.ID, cs.Config.ID))
+	}
+	return cs.onvifCapabilities
+}
+
+// SetONVIFProfiles caches the ONVIF GetProfiles response XML payload.
+func (cs *CameraStream) SetONVIFProfiles(payload []byte) {
+	cs.onvifMu.Lock()
+	defer cs.onvifMu.Unlock()
+	cs.onvifProfiles = append([]byte(nil), payload...)
+}
+
+// GetONVIFProfiles returns the cached ONVIF GetProfiles XML payload.
+func (cs *CameraStream) GetONVIFProfiles() []byte {
+	cs.onvifMu.RLock()
+	defer cs.onvifMu.RUnlock()
+	if len(cs.onvifProfiles) == 0 {
+		// Return default single profile payload
+		return []byte(fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><trt:GetProfilesResponse xmlns:trt="http://www.onvif.org/ver10/media/wsdl" xmlns:tt="http://www.onvif.org/ver10/schema"><trt:Profiles token="Profile_1" fixed="true"><tt:Name>%s</tt:Name><tt:VideoSourceConfiguration token="VideoSourceConfig_1"><tt:SourceToken>VideoSource_1</tt:SourceToken><tt:Bounds x="0" y="0" width="1920" height="1080"/></tt:VideoSourceConfiguration></trt:Profiles></trt:GetProfilesResponse>`, cs.Config.Name))
+	}
+	return cs.onvifProfiles
 }
 
 // BroadcastMJPEGFrame delivers a JPEG frame to all downstream MJPEG subscribers.
