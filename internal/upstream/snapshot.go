@@ -20,12 +20,39 @@ import (
 	"github.com/pion/rtp"
 )
 
+// CleanJPEG sanitizes a decoded JPEG frame. Some IP cameras (e.g. TP-Link Tapo)
+// embed a complete JPEG image (including SOI, DQT, DHT, SOF0, SOS) within the RTP payload,
+// which causes RFC 2435 RTP/MJPEG decoders to produce a frame with two concatenated headers.
+// This function strips any duplicate prefix so the resulting JPEG decodes cleanly in all browsers.
+func CleanJPEG(data []byte) []byte {
+	if len(data) < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+		return data
+	}
+	searchLimit := len(data) - 1
+	if searchLimit > 2048 {
+		searchLimit = 2048
+	}
+	for i := 2; i < searchLimit; i++ {
+		if data[i] == 0xFF && data[i+1] == 0xD8 {
+			return data[i:]
+		}
+	}
+	return data
+}
+
 // FetchSingleSnapshot retrieves a single JPEG frame from an HTTP or RTSP source.
 func FetchSingleSnapshot(ctx context.Context, rawURL string) ([]byte, error) {
+	var frame []byte
+	var err error
 	if strings.HasPrefix(rawURL, "rtsp://") || strings.HasPrefix(rawURL, "rtsps://") {
-		return CaptureRTSPSnapshot(ctx, rawURL)
+		frame, err = CaptureRTSPSnapshot(ctx, rawURL)
+	} else {
+		frame, err = fetchHTTPSnapshot(ctx, rawURL)
 	}
-	return fetchHTTPSnapshot(ctx, rawURL)
+	if err != nil {
+		return nil, err
+	}
+	return CleanJPEG(frame), nil
 }
 
 // fetchHTTPSnapshot fetches a single JPEG from an HTTP/HTTPS endpoint.

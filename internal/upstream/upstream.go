@@ -323,6 +323,8 @@ func (cs *CameraStream) UnsubscribeMJPEG(clientID string) {
 
 // BroadcastMJPEGFrame delivers a JPEG frame to all downstream MJPEG subscribers.
 func (cs *CameraStream) BroadcastMJPEGFrame(frame []byte) {
+	frame = CleanJPEG(frame)
+
 	// Cache snapshot atomically
 	cs.UpdateSnapshot(frame)
 
@@ -338,6 +340,8 @@ func (cs *CameraStream) BroadcastMJPEGFrame(frame []byte) {
 
 // UpdateSnapshot updates the latest in-memory cached JPEG snapshot.
 func (cs *CameraStream) UpdateSnapshot(frame []byte) {
+	frame = CleanJPEG(frame)
+
 	cs.snapshotMu.Lock()
 	defer cs.snapshotMu.Unlock()
 
