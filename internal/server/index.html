@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>video-amplifier | Camera Feeds</title>
+  <title>video-amplifier | Camera Snapshots</title>
   <style>
     :root {
       --bg: #090d16;
@@ -301,18 +301,26 @@
         <span>Active Viewers: <strong id="stat-clients">0</strong></span>
         <span>Data Ingested: <strong id="stat-bytes">0 MB</strong></span>
       </div>
-      <div>
-        <span style="font-size:0.75rem; color:var(--text-muted);">Auto-refreshing every 3s</span>
+      <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+        <label for="refresh-interval" style="font-size:0.8125rem; color:var(--text-muted);">Snapshot Refresh:</label>
+        <select id="refresh-interval" class="header-btn" style="padding:0.25rem 0.5rem; font-size:0.8125rem; background:#121826; color:var(--text-main); cursor:pointer;" onchange="onIntervalChange(this.value)">
+          <option value="5000" selected>Every 5s</option>
+          <option value="10000">Every 10s</option>
+          <option value="30000">Every 30s</option>
+          <option value="60000">Every 60s</option>
+          <option value="0">Manual only</option>
+        </select>
+        <button id="refresh-now-btn" class="header-btn" style="cursor:pointer;" onclick="manualRefresh()">Refresh Now</button>
       </div>
     </div>
 
     <div class="grid" id="cameras-grid">
-      <div class="empty-state">Loading camera streams...</div>
+      <div class="empty-state">Loading camera snapshots...</div>
     </div>
   </main>
 
   <footer>
-    video-amplifier &bull; Single-Tenant Upstream Streaming Proxy &bull; Zero Transcode
+    video-amplifier &bull; Single-Tenant Upstream Streaming Proxy &bull; Occasional Snapshots
   </footer>
 
   <script>
@@ -347,11 +355,55 @@
       });
     }
 
+    let cachedCameras = [];
+    let refreshTimer = null;
+    let refreshIntervalMs = 5000;
+
+    function refreshSnapshots() {
+      const now = Date.now();
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      cachedCameras.forEach(cam => {
+        const imgEl = document.getElementById(`img-${cam.id}`);
+        if (!imgEl) return;
+        const newImg = new Image();
+        newImg.onload = () => {
+          imgEl.src = newImg.src;
+          const timeEl = document.getElementById(`overlay-time-${cam.id}`);
+          if (timeEl) timeEl.textContent = `Snapshot · ${timeStr}`;
+        };
+        newImg.src = `/cameras/${cam.id}/snapshot.jpg?t=${now}`;
+      });
+    }
+
+    function restartTimer() {
+      if (refreshTimer) {
+        clearInterval(refreshTimer);
+        refreshTimer = null;
+      }
+      if (refreshIntervalMs > 0) {
+        refreshTimer = setInterval(() => {
+          updateDashboard();
+          refreshSnapshots();
+        }, refreshIntervalMs);
+      }
+    }
+
+    function onIntervalChange(val) {
+      refreshIntervalMs = parseInt(val, 10);
+      restartTimer();
+    }
+
+    function manualRefresh() {
+      updateDashboard();
+      refreshSnapshots();
+    }
+
     async function updateDashboard() {
       try {
         const res = await fetch('/cameras');
         if (!res.ok) throw new Error('API request failed');
         const cameras = await res.json();
+        cachedCameras = cameras || [];
 
         const grid = document.getElementById('cameras-grid');
         if (!cameras || cameras.length === 0) {
@@ -371,13 +423,15 @@
         document.getElementById('stat-clients').innerText = totalClients;
         document.getElementById('stat-bytes').innerText = formatBytes(totalBytes);
 
-        // Render or update cards in-place to avoid breaking live video streams
+        // Render or update cards in-place
+        const now = Date.now();
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
         cameras.forEach(cam => {
           let card = document.getElementById(`card-${cam.id}`);
           const mjpegURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/mjpeg';
           const rtspURL = 'rtsp://' + hostname + ':8554/' + cam.id;
           const snapURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
-          const streamSrc = '/cameras/' + cam.id + '/mjpeg';
 
           if (!card) {
             const emptyState = grid.querySelector('.empty-state');
@@ -397,10 +451,10 @@
                 </div>
 
                 <div class="video-viewport">
-                  <img id="img-${cam.id}" src="${streamSrc}" alt="${cam.name}" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg?t=' + Date.now();" />
+                  <img id="img-${cam.id}" src="${snapURL}?t=${now}" alt="${cam.name}" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg?t=' + Date.now();" />
                   <div class="video-overlay">
                     <div class="live-dot" id="dot-${cam.id}"></div>
-                    <span id="overlay-state-${cam.id}">${cam.state}</span>
+                    <span id="overlay-time-${cam.id}">Snapshot &bull; ${timeStr}</span>
                   </div>
                 </div>
 
@@ -412,16 +466,16 @@
 
                   <div class="stream-urls">
                     <div class="url-chip">
+                      <span>${snapURL}</span>
+                      <button class="copy-btn" onclick="copyToClipboard('${snapURL}', this)">Copy Snapshot</button>
+                    </div>
+                    <div class="url-chip">
                       <span>${mjpegURL}</span>
                       <button class="copy-btn" onclick="copyToClipboard('${mjpegURL}', this)">Copy MJPEG</button>
                     </div>
                     <div class="url-chip">
                       <span>${rtspURL}</span>
                       <button class="copy-btn" onclick="copyToClipboard('${rtspURL}', this)">Copy RTSP</button>
-                    </div>
-                    <div class="url-chip">
-                      <span><a href="${snapURL}" target="_blank" style="color:inherit;text-decoration:none;">${snapURL}</a></span>
-                      <button class="copy-btn" onclick="copyToClipboard('${snapURL}', this)">Copy Snapshot</button>
                     </div>
                   </div>
                 </div>
@@ -434,8 +488,6 @@
               badge.className = `badge ${getBadgeClass(cam.state)}`;
               badge.innerText = cam.state;
             }
-            const overlayState = document.getElementById(`overlay-state-${cam.id}`);
-            if (overlayState) overlayState.innerText = cam.state;
             const clients = document.getElementById(`clients-${cam.id}`);
             if (clients) clients.innerText = cam.active_clients || 0;
             const bytes = document.getElementById(`bytes-${cam.id}`);
@@ -448,9 +500,10 @@
       }
     }
 
-    // Initial fetch and 3s polling
-    updateDashboard();
-    setInterval(updateDashboard, 3000);
+    // Initial fetch and start interval timer
+    updateDashboard().then(() => {
+      restartTimer();
+    });
   </script>
 </body>
 </html>
