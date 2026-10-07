@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>video-amplifier | Camera Feeds</title>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card-bg: #121826;
+      --card-border: #1f293d;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --badge-green: #10b981;
+      --badge-yellow: #f59e0b;
+      --badge-red: #ef4444;
+      --badge-blue: #6366f1;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      background: rgba(18, 24, 38, 0.85);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--card-border);
+      padding: 1rem 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .brand svg {
+      width: 28px;
+      height: 28px;
+      fill: var(--accent);
+    }
+    .brand h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .header-links {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+    }
+    .header-btn {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.875rem;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.03);
+      transition: all 0.2s ease;
+    }
+    .header-btn:hover {
+      color: var(--text-main);
+      border-color: var(--accent);
+    }
+    main {
+      flex: 1;
+      padding: 1.5rem;
+      max-width: 1800px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .stats-summary {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+      display: flex;
+      gap: 1.25rem;
+    }
+    .stats-summary span strong {
+      color: var(--text-main);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+      gap: 1.5rem;
+    }
+    .camera-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .camera-card:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+    .card-header {
+      padding: 0.875rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--card-border);
+    }
+    .cam-info h2 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-main);
+      margin-bottom: 0.15rem;
+    }
+    .cam-id {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+    .badges {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+    }
+    .badge {
+      font-size: 0.7rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 9999px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge-streaming, .badge-online {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--badge-green);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .badge-idle, .badge-connecting {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--badge-yellow);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .badge-backoff, .badge-error {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--badge-red);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .badge-mode {
+      background: rgba(99, 102, 241, 0.15);
+      color: var(--badge-blue);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+    .video-viewport {
+      position: relative;
+      background: #000;
+      aspect-ratio: 16 / 9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .video-viewport img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    .video-overlay {
+      position: absolute;
+      bottom: 0.5rem;
+      right: 0.5rem;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      backdrop-filter: blur(4px);
+    }
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--badge-green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.85); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    .card-footer {
+      padding: 0.75rem 1rem;
+      background: rgba(255, 255, 255, 0.01);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      font-size: 0.8125rem;
+    }
+    .metrics-row {
+      display: flex;
+      justify-content: space-between;
+      color: var(--text-muted);
+    }
+    .stream-urls {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      margin-top: 0.25rem;
+    }
+    .url-chip {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 0.3rem 0.6rem;
+      border-radius: 6px;
+      border: 1px solid var(--card-border);
+      font-family: monospace;
+      font-size: 0.75rem;
+      color: #93c5fd;
+    }
+    .url-chip span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-right: 0.5rem;
+    }
+    .copy-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 0.1rem 0.3rem;
+      border-radius: 4px;
+      transition: color 0.15s;
+    }
+    .copy-btn:hover {
+      color: var(--accent);
+    }
+    .empty-state {
+      text-align: center;
+      padding: 4rem 1rem;
+      color: var(--text-muted);
+      grid-column: 1 / -1;
+    }
+    footer {
+      border-top: 1px solid var(--card-border);
+      padding: 1rem;
+      text-align: center;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 24 24">
+        <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4zM14 13h-3v3H9v-3H6v-2h3V8h2v3h3v2z"/>
+      </svg>
+      <h1>video-amplifier</h1>
+    </div>
+    <div class="header-links">
+      <a href="/cameras" class="header-btn" target="_blank">JSON API</a>
+      <a href="http://" id="metrics-link" class="header-btn" target="_blank">Metrics</a>
+      <a href="/healthz" class="header-btn" target="_blank">Healthz</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <div class="stats-summary" id="stats-summary">
+        <span>Total Feeds: <strong id="stat-total">0</strong></span>
+        <span>Active Viewers: <strong id="stat-clients">0</strong></span>
+        <span>Data Ingested: <strong id="stat-bytes">0 MB</strong></span>
+      </div>
+      <div>
+        <span style="font-size:0.75rem; color:var(--text-muted);">Auto-refreshing every 3s</span>
+      </div>
+    </div>
+
+    <div class="grid" id="cameras-grid">
+      <div class="empty-state">Loading camera streams...</div>
+    </div>
+  </main>
+
+  <footer>
+    video-amplifier &bull; Single-Tenant Upstream Streaming Proxy &bull; Zero Transcode
+  </footer>
+
+  <script>
+    const hostname = window.location.hostname || 'localhost';
+    const httpPort = window.location.port || '8080';
+    const metricsLink = document.getElementById('metrics-link');
+    metricsLink.href = 'http://' + hostname + ':9090/metrics';
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function getBadgeClass(state) {
+      switch ((state || '').toLowerCase()) {
+        case 'streaming': return 'badge-streaming';
+        case 'idle':
+        case 'connecting': return 'badge-idle';
+        case 'backoff': return 'badge-backoff';
+        default: return 'badge-idle';
+      }
+    }
+
+    function copyToClipboard(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        const orig = btn.innerText;
+        btn.innerText = 'Copied!';
+        setTimeout(() => { btn.innerText = orig; }, 1500);
+      });
+    }
+
+    async function updateDashboard() {
+      try {
+        const res = await fetch('/cameras');
+        if (!res.ok) throw new Error('API request failed');
+        const cameras = await res.json();
+
+        const grid = document.getElementById('cameras-grid');
+        if (!cameras || cameras.length === 0) {
+          grid.innerHTML = '<div class="empty-state">No cameras configured in server configuration.</div>';
+          return;
+        }
+
+        let totalClients = 0;
+        let totalBytes = 0;
+
+        cameras.forEach(c => {
+          totalClients += (c.active_clients || 0);
+          totalBytes += (c.bytes_received || 0);
+        });
+
+        document.getElementById('stat-total').innerText = cameras.length;
+        document.getElementById('stat-clients').innerText = totalClients;
+        document.getElementById('stat-bytes').innerText = formatBytes(totalBytes);
+
+        // Render cards
+        grid.innerHTML = cameras.map(cam => {
+          const isHTTP = (cam.upstream_url || '').startsWith('http');
+          const streamSrc = isHTTP ? ('/cameras/' + cam.id + '/mjpeg') : ('/cameras/' + cam.id + '/snapshot.jpg');
+          const mjpegURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/mjpeg';
+          const rtspURL = 'rtsp://' + hostname + ':8554/' + cam.id;
+          const snapURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
+
+          return `
+            <div class="camera-card" id="card-${cam.id}">
+              <div class="card-header">
+                <div class="cam-info">
+                  <h2>${cam.name || cam.id}</h2>
+                  <div class="cam-id">${cam.id}</div>
+                </div>
+                <div class="badges">
+                  <span class="badge badge-mode">${cam.mode}</span>
+                  <span class="badge ${getBadgeClass(cam.state)}">${cam.state}</span>
+                </div>
+              </div>
+
+              <div class="video-viewport">
+                <img src="${streamSrc}" alt="${cam.name}" loading="lazy" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg';" />
+                <div class="video-overlay">
+                  <div class="live-dot"></div>
+                  <span>${cam.state}</span>
+                </div>
+              </div>
+
+              <div class="card-footer">
+                <div class="metrics-row">
+                  <span>Downstream Viewers: <strong>${cam.active_clients || 0}</strong></span>
+                  <span>Received: <strong>${formatBytes(cam.bytes_received)}</strong></span>
+                </div>
+
+                <div class="stream-urls">
+                  <div class="url-chip">
+                    <span>${mjpegURL}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${mjpegURL}', this)">Copy MJPEG</button>
+                  </div>
+                  <div class="url-chip">
+                    <span>${rtspURL}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${rtspURL}', this)">Copy RTSP</button>
+                  </div>
+                  <div class="url-chip">
+                    <span><a href="${snapURL}" target="_blank" style="color:inherit;text-decoration:none;">${snapURL}</a></span>
+                    <button class="copy-btn" onclick="copyToClipboard('${snapURL}', this)">Copy Snapshot</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+      } catch (err) {
+        console.error('Failed refreshing camera dashboard', err);
+      }
+    }
+
+    // Initial fetch and 3s polling
+    updateDashboard();
+    setInterval(updateDashboard, 3000);
+  </script>
+</body>
+</html>

@@ -46,8 +46,10 @@ func NewHTTPServer(cfg *config.Config, manager *upstream.Manager, logger *slog.L
 	mux.HandleFunc("/cameras", s.handleCamerasList)
 	mux.HandleFunc("/cameras/", s.handleCameraRoute)
 	mux.HandleFunc("/snapshot.jpg", s.handleRootSnapshot)
+	mux.HandleFunc("/ui", s.handleDashboard)
+	mux.HandleFunc("/dashboard", s.handleDashboard)
 
-	// Direct short routes e.g. /{id}/mjpeg and /{id}/snapshot.jpg
+	// Direct short routes e.g. /{id}/mjpeg and /{id}/snapshot.jpg, plus / for dashboard
 	mux.HandleFunc("/", s.handleCatchAll)
 
 	s.server = &http.Server{
@@ -179,8 +181,13 @@ func (s *HTTPServer) handleRootSnapshot(w http.ResponseWriter, r *http.Request) 
 	s.serveSnapshot(w, r, cam)
 }
 
-// handleCatchAll handles /{id}/mjpeg or /{id}/snapshot.jpg
+// handleCatchAll handles /{id}/mjpeg or /{id}/snapshot.jpg, or / for dashboard
 func (s *HTTPServer) handleCatchAll(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" || r.URL.Path == "" {
+		s.handleDashboard(w, r)
+		return
+	}
+
 	path := strings.TrimPrefix(r.URL.Path, "/")
 	parts := strings.Split(path, "/")
 

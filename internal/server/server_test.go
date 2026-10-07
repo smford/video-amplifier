@@ -42,6 +42,33 @@ func TestHTTPServer_HealthAndReadyProbes(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_DashboardUI(t *testing.T) {
+	cfg := config.DefaultConfig()
+	m := metrics.NewMetrics(nil)
+	mgr := upstream.NewManager(cfg, m, nil, nil)
+	_ = mgr.Start(context.Background())
+	defer mgr.Stop()
+
+	httpSrv := NewHTTPServer(cfg, mgr, nil)
+
+	routes := []string{"/", "/ui", "/dashboard"}
+	for _, route := range routes {
+		req := httptest.NewRequest(http.MethodGet, route, nil)
+		w := httptest.NewRecorder()
+		httpSrv.server.Handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("route %s returned %d, expected 200", route, w.Code)
+		}
+		if !strings.Contains(w.Header().Get("Content-Type"), "text/html") {
+			t.Fatalf("route %s returned content type %s, expected text/html", route, w.Header().Get("Content-Type"))
+		}
+		if !strings.Contains(w.Body.String(), "video-amplifier") {
+			t.Fatalf("route %s body does not contain video-amplifier", route)
+		}
+	}
+}
+
 func TestHTTPServer_CamerasAPIAndSnapshot(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Cameras = []config.CameraConfig{

@@ -90,7 +90,11 @@ flowchart TD
 - **Health Probes**:
   - `/healthz`: Liveness check (process operational).
   - `/readyz`: Readiness check (all stream routes active and upstream engine responsive).
-- **10-Second Coordinated Graceful Shutdown**: Traps `SIGTERM` and `SIGINT`, disconnects downstream clients cleanly (HTTP 503 / RTSP TEARDOWN), terminates upstream sockets, and cleanly flushes state before exit.
+### 5. Self-Contained Web Interface & Live Dashboard
+- **Responsive Multi-Stream Grid**: Directly monitor all camera streams at `http://localhost:8080/` (or `/ui` / `/dashboard`) via a modern dark-mode layout.
+- **Air-Gapped Operation**: 100% self-contained with embedded HTML/CSS/JS (zero external CDNs or external asset fetches), ensuring full functionality in isolated security subnets.
+- **Stream URL Chips & One-Click Copy**: Instantly copy downstream RTSP, MJPEG, and snapshot URLs for integration into Home Assistant, Frigate, or web dashboards.
+- **Real-Time Telemetry**: Automatically polls `/cameras` every 3 seconds to display live connection states, active downstream viewer counts, and cumulative ingested bandwidth.
 
 ---
 
@@ -146,6 +150,7 @@ cameras:
 ### HTTP Endpoints (`:8080`)
 | Method | Path | Description |
 |---|---|---|
+| `GET` | `/`, `/ui`, `/dashboard` | **Live Web Interface**: Responsive multi-camera dashboard with live streams & stream URL chips |
 | `GET` | `/cameras/{id}/mjpeg` | Multipart MJPEG stream (`multipart/x-mixed-replace; boundary=...`) |
 | `GET` | `/cameras/{id}/snapshot.jpg` | Instant cached JPEG single frame (`image/jpeg`) |
 | `GET` | `/snapshot.jpg?camera={id}` | Query-based snapshot caching endpoint |
