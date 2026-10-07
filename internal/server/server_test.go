@@ -560,6 +560,49 @@ func TestHTTPServer_WebDashboardBasicAuth(t *testing.T) {
 			t.Fatalf("expected 200 for %s with valid credentials, got %d", route, validW.Code)
 		}
 	}
+
+	// Test camera with custom auth: verify web credentials can also access camera snapshot to avoid login loop
+	camCfg := config.CameraConfig{
+		ID:                 "cam-auth",
+		Name:               "Cam Auth",
+		UpstreamURL:        "rtsp://localhost/cam",
+		AuthMode:           config.AuthModeCustom,
+		DownstreamUsername: "camuser",
+		DownstreamPassword: "campass",
+	}
+	cfg.Cameras = []config.CameraConfig{camCfg}
+	mgrWithCam := upstream.NewManager(cfg, m, nil, nil)
+	if cam, ok := mgrWithCam.Get("cam-auth"); ok {
+		cam.UpdateSnapshot([]byte("\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xDB\x00C\x00\xFF\xD9"))
+	}
+	serverWithCam := NewHTTPServer(cfg, mgrWithCam, nil)
+
+	// A. Web credentials authorize camera snapshot
+	webAuthReq := httptest.NewRequest(http.MethodGet, "/cameras/cam-auth/snapshot.jpg", nil)
+	webAuthReq.SetBasicAuth("webadmin", "webpassword")
+	webAuthW := httptest.NewRecorder()
+	serverWithCam.server.Handler.ServeHTTP(webAuthW, webAuthReq)
+	if webAuthW.Code != http.StatusOK {
+		t.Fatalf("expected 200 using web credentials for camera snapshot, got %d", webAuthW.Code)
+	}
+
+	// B. Camera-specific credentials also authorize camera snapshot
+	camAuthReq := httptest.NewRequest(http.MethodGet, "/cameras/cam-auth/snapshot.jpg", nil)
+	camAuthReq.SetBasicAuth("camuser", "campass")
+	camAuthW := httptest.NewRecorder()
+	serverWithCam.server.Handler.ServeHTTP(camAuthW, camAuthReq)
+	if camAuthW.Code != http.StatusOK {
+		t.Fatalf("expected 200 using camera credentials for camera snapshot, got %d", camAuthW.Code)
+	}
+
+	// C. Bad credentials -> 401
+	badCamAuthReq := httptest.NewRequest(http.MethodGet, "/cameras/cam-auth/snapshot.jpg", nil)
+	badCamAuthReq.SetBasicAuth("wrong", "credentials")
+	badCamAuthW := httptest.NewRecorder()
+	serverWithCam.server.Handler.ServeHTTP(badCamAuthW, badCamAuthReq)
+	if badCamAuthW.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 using bad credentials for camera snapshot, got %d", badCamAuthW.Code)
+	}
 }
 
 

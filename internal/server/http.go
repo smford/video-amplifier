@@ -309,21 +309,36 @@ func (s *HTTPServer) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 }
 
 // authorizeCameraRequest validates downstream HTTP credentials against camera authentication policy.
+// If valid web credentials (WebUsername / WebPassword) are provided, the request is also authorized,
+// allowing dashboard users to view snapshots and streams without a credential conflict.
 func (s *HTTPServer) authorizeCameraRequest(w http.ResponseWriter, r *http.Request, cam *upstream.CameraStream) bool {
-	expectedUser, _, required := cam.GetExpectedCredentials()
+	_, _, required := cam.GetExpectedCredentials()
 	if !required {
-		return true // Auth is disabled
+		return true // Auth is disabled for this camera
 	}
 
 	user, pass, ok := r.BasicAuth()
-	if !ok || !cam.ValidateCredentials(user, pass) {
+	if !ok {
 		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="video-amplifier (%s)"`, cam.Config.Name))
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return false
 	}
 
-	_ = expectedUser
-	return true
+	// 1. Check camera credentials
+	if cam.ValidateCredentials(user, pass) {
+		return true
+	}
+
+	// 2. Check if valid web dashboard credentials were used
+	if s.cfg.Server.WebUsername != "" && s.cfg.Server.WebPassword != "" {
+		if user == s.cfg.Server.WebUsername && pass == s.cfg.Server.WebPassword {
+			return true
+		}
+	}
+
+	w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="video-amplifier (%s)"`, cam.Config.Name))
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	return false
 }
 
 // streamMJPEG streams multipart/x-mixed-replace JPEG frames to a downstream HTTP client.
