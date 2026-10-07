@@ -118,15 +118,17 @@ func (m *Manager) IsReady() bool {
 
 // CameraSummary represents a snapshot of camera status for API reporting.
 type CameraSummary struct {
-	ID            string          `json:"id"`
-	Name          string          `json:"name"`
-	UpstreamURL   string          `json:"upstream_url"`
-	Mode          config.Mode     `json:"mode"`
-	State         StreamState     `json:"state"`
-	ActiveClients int             `json:"active_clients"`
-	BytesReceived int64           `json:"bytes_received"`
-	AuthMode      config.AuthMode `json:"auth_mode"`
-	AuthRequired  bool            `json:"auth_required"`
+	ID                 string          `json:"id"`
+	Name               string          `json:"name"`
+	UpstreamURL        string          `json:"upstream_url"`
+	Mode               config.Mode     `json:"mode"`
+	State              StreamState     `json:"state"`
+	ActiveClients      int             `json:"active_clients"`
+	BytesReceived      int64           `json:"bytes_received"`
+	AuthMode           config.AuthMode `json:"auth_mode"`
+	AuthRequired       bool            `json:"auth_required"`
+	DownstreamUsername string          `json:"downstream_username,omitempty"`
+	DownstreamPassword string          `json:"downstream_password,omitempty"`
 }
 
 // Summaries returns current operational status for all cameras.
@@ -135,17 +137,19 @@ func (m *Manager) Summaries() []CameraSummary {
 	summaries := make([]CameraSummary, len(streams))
 
 	for i, s := range streams {
-		_, _, authRequired := s.GetExpectedCredentials()
+		user, pass, authRequired := s.GetExpectedCredentials()
 		summaries[i] = CameraSummary{
-			ID:            s.Config.ID,
-			Name:          s.Config.Name,
-			UpstreamURL:   logging.RedactCredentials(s.Config.UpstreamURL),
-			Mode:          s.Config.Mode,
-			State:         s.State(),
-			ActiveClients: s.TotalActiveClients(),
-			BytesReceived: s.BytesReceived(),
-			AuthMode:      s.Config.AuthMode,
-			AuthRequired:  authRequired,
+			ID:                 s.Config.ID,
+			Name:               s.Config.Name,
+			UpstreamURL:        logging.RedactCredentials(s.Config.UpstreamURL),
+			Mode:               s.Config.Mode,
+			State:              s.State(),
+			ActiveClients:      s.TotalActiveClients(),
+			BytesReceived:      s.BytesReceived(),
+			AuthMode:           s.Config.AuthMode,
+			AuthRequired:       authRequired,
+			DownstreamUsername: user,
+			DownstreamPassword: pass,
 		}
 	}
 	return summaries

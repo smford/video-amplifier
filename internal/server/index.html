@@ -541,11 +541,30 @@
           const initialSrc = mode === 'live' ? mjpegURL : `${snapURL}?t=${now}`;
           const overlayText = mode === 'live' ? 'LIVE STREAM' : `Snapshot &bull; ${timeStr}`;
 
-          // Copyable link representations: show credentials placeholder if authentication is required without revealing secrets
-          const authPrefix = authRequired ? '<username>:<password>@' : '';
-          const copySnapURL = window.location.protocol + '//' + authPrefix + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
-          const copyMjpegURL = window.location.protocol + '//' + authPrefix + window.location.host + '/cameras/' + cam.id + '/mjpeg';
-          const copyRtspURL = 'rtsp://' + authPrefix + hostname + ':8554/' + cam.id;
+          // Link representations:
+          // 1. Displayed in UI (masked for security): e.g. rtsp://***:***@host:8554/id
+          // 2. Full URL for clipboard copy: includes actual downstream username/password when configured
+          const hasCreds = authRequired && (cam.downstream_username || cam.downstream_password);
+          let copyAuthPrefix = '';
+          let displayAuthPrefix = '';
+          if (authRequired) {
+            displayAuthPrefix = '***:***@';
+            if (hasCreds) {
+              const u = encodeURIComponent(cam.downstream_username || '');
+              const p = encodeURIComponent(cam.downstream_password || '');
+              copyAuthPrefix = `${u}:${p}@`;
+            } else {
+              copyAuthPrefix = '<username>:<password>@';
+            }
+          }
+
+          const displaySnapURL = window.location.protocol + '//' + displayAuthPrefix + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
+          const displayMjpegURL = window.location.protocol + '//' + displayAuthPrefix + window.location.host + '/cameras/' + cam.id + '/mjpeg';
+          const displayRtspURL = 'rtsp://' + displayAuthPrefix + hostname + ':8554/' + cam.id;
+
+          const copySnapURL = window.location.protocol + '//' + copyAuthPrefix + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
+          const copyMjpegURL = window.location.protocol + '//' + copyAuthPrefix + window.location.host + '/cameras/' + cam.id + '/mjpeg';
+          const copyRtspURL = 'rtsp://' + copyAuthPrefix + hostname + ':8554/' + cam.id;
 
           if (!card) {
             const emptyState = grid.querySelector('.empty-state');
@@ -584,16 +603,16 @@
                   </div>
 
                   <div class="stream-urls">
-                    <div class="url-chip" id="chip-snap-${cam.id}" title="${escapeHtml(copySnapURL)}">
-                      <span id="url-snap-${cam.id}">${escapeHtml(copySnapURL)}</span>
+                    <div class="url-chip" id="chip-snap-${cam.id}" title="${escapeHtml(displaySnapURL)}">
+                      <span id="url-snap-${cam.id}">${escapeHtml(displaySnapURL)}</span>
                       <button class="copy-btn" id="btn-copy-snap-${cam.id}" onclick="copyToClipboard('${escapeHtml(copySnapURL)}', this)">Copy Snapshot</button>
                     </div>
-                    <div class="url-chip" id="chip-mjpeg-${cam.id}" title="${escapeHtml(copyMjpegURL)}">
-                      <span id="url-mjpeg-${cam.id}">${escapeHtml(copyMjpegURL)}</span>
+                    <div class="url-chip" id="chip-mjpeg-${cam.id}" title="${escapeHtml(displayMjpegURL)}">
+                      <span id="url-mjpeg-${cam.id}">${escapeHtml(displayMjpegURL)}</span>
                       <button class="copy-btn" id="btn-copy-mjpeg-${cam.id}" onclick="copyToClipboard('${escapeHtml(copyMjpegURL)}', this)">Copy MJPEG</button>
                     </div>
-                    <div class="url-chip" id="chip-rtsp-${cam.id}" title="${escapeHtml(copyRtspURL)}">
-                      <span id="url-rtsp-${cam.id}">${escapeHtml(copyRtspURL)}</span>
+                    <div class="url-chip" id="chip-rtsp-${cam.id}" title="${escapeHtml(displayRtspURL)}">
+                      <span id="url-rtsp-${cam.id}">${escapeHtml(displayRtspURL)}</span>
                       <button class="copy-btn" id="btn-copy-rtsp-${cam.id}" onclick="copyToClipboard('${escapeHtml(copyRtspURL)}', this)">Copy RTSP</button>
                     </div>
                   </div>
@@ -619,23 +638,23 @@
 
             // Update URL chips text, titles, and click handlers in case auth configuration changed
             const urlSnap = document.getElementById(`url-snap-${cam.id}`);
-            if (urlSnap) urlSnap.textContent = copySnapURL;
+            if (urlSnap) urlSnap.textContent = displaySnapURL;
             const chipSnap = document.getElementById(`chip-snap-${cam.id}`);
-            if (chipSnap) chipSnap.title = copySnapURL;
+            if (chipSnap) chipSnap.title = displaySnapURL;
             const btnCopySnap = document.getElementById(`btn-copy-snap-${cam.id}`);
             if (btnCopySnap) btnCopySnap.onclick = function() { copyToClipboard(copySnapURL, this); };
 
             const urlMjpeg = document.getElementById(`url-mjpeg-${cam.id}`);
-            if (urlMjpeg) urlMjpeg.textContent = copyMjpegURL;
+            if (urlMjpeg) urlMjpeg.textContent = displayMjpegURL;
             const chipMjpeg = document.getElementById(`chip-mjpeg-${cam.id}`);
-            if (chipMjpeg) chipMjpeg.title = copyMjpegURL;
+            if (chipMjpeg) chipMjpeg.title = displayMjpegURL;
             const btnCopyMjpeg = document.getElementById(`btn-copy-mjpeg-${cam.id}`);
             if (btnCopyMjpeg) btnCopyMjpeg.onclick = function() { copyToClipboard(copyMjpegURL, this); };
 
             const urlRtsp = document.getElementById(`url-rtsp-${cam.id}`);
-            if (urlRtsp) urlRtsp.textContent = copyRtspURL;
+            if (urlRtsp) urlRtsp.textContent = displayRtspURL;
             const chipRtsp = document.getElementById(`chip-rtsp-${cam.id}`);
-            if (chipRtsp) chipRtsp.title = copyRtspURL;
+            if (chipRtsp) chipRtsp.title = displayRtspURL;
             const btnCopyRtsp = document.getElementById(`btn-copy-rtsp-${cam.id}`);
             if (btnCopyRtsp) btnCopyRtsp.onclick = function() { copyToClipboard(copyRtspURL, this); };
           }
