@@ -173,6 +173,34 @@
       color: var(--badge-blue);
       border: 1px solid rgba(99, 102, 241, 0.3);
     }
+    .view-toggle {
+      display: inline-flex;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      overflow: hidden;
+      background: rgba(0, 0, 0, 0.4);
+      margin-left: 0.25rem;
+    }
+    .view-toggle button {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 0.18rem 0.5rem;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      transition: all 0.15s ease;
+    }
+    .view-toggle button.active {
+      background: var(--accent);
+      color: #090d16;
+    }
+    .view-toggle button:hover:not(.active) {
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.05);
+    }
     .video-viewport {
       position: relative;
       background: #000;
@@ -302,25 +330,26 @@
         <span>Data Ingested: <strong id="stat-bytes">0 MB</strong></span>
       </div>
       <div style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
-        <label for="refresh-interval" style="font-size:0.8125rem; color:var(--text-muted);">Snapshot Refresh:</label>
+        <label for="refresh-interval" style="font-size:0.8125rem; color:var(--text-muted);">View Mode:</label>
         <select id="refresh-interval" class="header-btn" style="padding:0.25rem 0.5rem; font-size:0.8125rem; background:#121826; color:var(--text-main); cursor:pointer;" onchange="onIntervalChange(this.value)">
-          <option value="5000" selected>Every 5s</option>
-          <option value="10000">Every 10s</option>
-          <option value="30000">Every 30s</option>
-          <option value="60000">Every 60s</option>
-          <option value="0">Manual only</option>
+          <option value="5000" selected>Snapshots (Every 5s - Default)</option>
+          <option value="10000">Snapshots (Every 10s)</option>
+          <option value="30000">Snapshots (Every 30s)</option>
+          <option value="60000">Snapshots (Every 60s)</option>
+          <option value="live">Live Stream (Continuous All)</option>
+          <option value="0">Manual Refresh only</option>
         </select>
         <button id="refresh-now-btn" class="header-btn" style="cursor:pointer;" onclick="manualRefresh()">Refresh Now</button>
       </div>
     </div>
 
     <div class="grid" id="cameras-grid">
-      <div class="empty-state">Loading camera snapshots...</div>
+      <div class="empty-state">Loading camera feeds...</div>
     </div>
   </main>
 
   <footer>
-    video-amplifier &bull; Single-Tenant Upstream Streaming Proxy &bull; Occasional Snapshots
+    video-amplifier &bull; Single-Tenant Upstream Streaming Proxy &bull; Zero Transcode
   </footer>
 
   <script>
@@ -356,20 +385,50 @@
     }
 
     let cachedCameras = [];
+    let cameraModes = {}; // camId -> 'snap' | 'live'
     let refreshTimer = null;
     let refreshIntervalMs = 5000;
+
+    function setCameraMode(camId, mode) {
+      cameraModes[camId] = mode;
+      const imgEl = document.getElementById(`img-${camId}`);
+      const timeEl = document.getElementById(`overlay-time-${camId}`);
+      const btnSnap = document.getElementById(`btn-snap-${camId}`);
+      const btnLive = document.getElementById(`btn-live-${camId}`);
+
+      if (mode === 'live') {
+        if (btnSnap) btnSnap.classList.remove('active');
+        if (btnLive) btnLive.classList.add('active');
+        if (timeEl) timeEl.textContent = 'LIVE STREAM';
+        if (imgEl) {
+          imgEl.src = `/cameras/${camId}/mjpeg`;
+        }
+      } else {
+        if (btnSnap) btnSnap.classList.add('active');
+        if (btnLive) btnLive.classList.remove('active');
+        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (timeEl) timeEl.textContent = `Snapshot · ${timeStr}`;
+        if (imgEl) {
+          imgEl.src = `/cameras/${camId}/snapshot.jpg?t=${Date.now()}`;
+        }
+      }
+    }
 
     function refreshSnapshots() {
       const now = Date.now();
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       cachedCameras.forEach(cam => {
+        if (cameraModes[cam.id] === 'live') return;
+
         const imgEl = document.getElementById(`img-${cam.id}`);
         if (!imgEl) return;
         const newImg = new Image();
         newImg.onload = () => {
-          imgEl.src = newImg.src;
-          const timeEl = document.getElementById(`overlay-time-${cam.id}`);
-          if (timeEl) timeEl.textContent = `Snapshot · ${timeStr}`;
+          if (cameraModes[cam.id] !== 'live') {
+            imgEl.src = newImg.src;
+            const timeEl = document.getElementById(`overlay-time-${cam.id}`);
+            if (timeEl) timeEl.textContent = `Snapshot · ${timeStr}`;
+          }
         };
         newImg.src = `/cameras/${cam.id}/snapshot.jpg?t=${now}`;
       });
@@ -389,8 +448,16 @@
     }
 
     function onIntervalChange(val) {
-      refreshIntervalMs = parseInt(val, 10);
-      restartTimer();
+      if (val === 'live') {
+        refreshIntervalMs = 0;
+        restartTimer();
+        cachedCameras.forEach(cam => setCameraMode(cam.id, 'live'));
+      } else {
+        refreshIntervalMs = parseInt(val, 10);
+        cachedCameras.forEach(cam => setCameraMode(cam.id, 'snap'));
+        restartTimer();
+        refreshSnapshots();
+      }
     }
 
     function manualRefresh() {
@@ -428,10 +495,17 @@
         const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
         cameras.forEach(cam => {
+          if (!cameraModes[cam.id]) {
+            const selectEl = document.getElementById('refresh-interval');
+            cameraModes[cam.id] = (selectEl && selectEl.value === 'live') ? 'live' : 'snap';
+          }
+          const mode = cameraModes[cam.id];
           let card = document.getElementById(`card-${cam.id}`);
           const mjpegURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/mjpeg';
           const rtspURL = 'rtsp://' + hostname + ':8554/' + cam.id;
           const snapURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
+          const initialSrc = mode === 'live' ? mjpegURL : `${snapURL}?t=${now}`;
+          const overlayText = mode === 'live' ? 'LIVE STREAM' : `Snapshot &bull; ${timeStr}`;
 
           if (!card) {
             const emptyState = grid.querySelector('.empty-state');
@@ -447,14 +521,18 @@
                   <div class="badges">
                     <span class="badge badge-mode">${cam.mode}</span>
                     <span class="badge ${getBadgeClass(cam.state)}" id="badge-state-${cam.id}">${cam.state}</span>
+                    <div class="view-toggle">
+                      <button id="btn-snap-${cam.id}" class="${mode === 'snap' ? 'active' : ''}" onclick="setCameraMode('${cam.id}', 'snap')">Snap</button>
+                      <button id="btn-live-${cam.id}" class="${mode === 'live' ? 'active' : ''}" onclick="setCameraMode('${cam.id}', 'live')">Live</button>
+                    </div>
                   </div>
                 </div>
 
                 <div class="video-viewport">
-                  <img id="img-${cam.id}" src="${snapURL}?t=${now}" alt="${cam.name}" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg?t=' + Date.now();" />
+                  <img id="img-${cam.id}" src="${initialSrc}" alt="${cam.name}" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg?t=' + Date.now();" />
                   <div class="video-overlay">
                     <div class="live-dot" id="dot-${cam.id}"></div>
-                    <span id="overlay-time-${cam.id}">Snapshot &bull; ${timeStr}</span>
+                    <span id="overlay-time-${cam.id}">${overlayText}</span>
                   </div>
                 </div>
 
