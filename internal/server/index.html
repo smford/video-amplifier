@@ -386,6 +386,16 @@
       }
     }
 
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function copyToClipboard(text, btn) {
       navigator.clipboard.writeText(text).then(() => {
         const orig = btn.innerText;
@@ -545,13 +555,13 @@
               <div class="camera-card" id="card-${cam.id}">
                 <div class="card-header">
                   <div class="cam-info">
-                    <h2>${cam.name || cam.id}</h2>
-                    <div class="cam-id">${cam.id}</div>
+                    <h2>${escapeHtml(cam.name || cam.id)}</h2>
+                    <div class="cam-id">${escapeHtml(cam.id)}</div>
                   </div>
                   <div class="badges">
-                    <span class="badge ${authBadgeClass}" id="badge-auth-${cam.id}">${authBadgeLabel}</span>
-                    <span class="badge badge-mode">${cam.mode}</span>
-                    <span class="badge ${getBadgeClass(cam.state)}" id="badge-state-${cam.id}">${cam.state}</span>
+                    <span class="badge ${authBadgeClass}" id="badge-auth-${cam.id}">${escapeHtml(authBadgeLabel)}</span>
+                    <span class="badge badge-mode">${escapeHtml(cam.mode)}</span>
+                    <span class="badge ${getBadgeClass(cam.state)}" id="badge-state-${cam.id}">${escapeHtml(cam.state)}</span>
                     <div class="view-toggle">
                       <button id="btn-snap-${cam.id}" class="${mode === 'snap' ? 'active' : ''}" onclick="setCameraMode('${cam.id}', 'snap')">Snap</button>
                       <button id="btn-live-${cam.id}" class="${mode === 'live' ? 'active' : ''}" onclick="setCameraMode('${cam.id}', 'live')">Live</button>
@@ -560,7 +570,7 @@
                 </div>
 
                 <div class="video-viewport">
-                  <img id="img-${cam.id}" src="${initialSrc}" alt="${cam.name}" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg?t=' + Date.now();" />
+                  <img id="img-${cam.id}" src="${initialSrc}" alt="${escapeHtml(cam.name)}" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg?t=' + Date.now();" />
                   <div class="video-overlay">
                     <div class="live-dot" id="dot-${cam.id}"></div>
                     <span id="overlay-time-${cam.id}">${overlayText}</span>
@@ -574,17 +584,17 @@
                   </div>
 
                   <div class="stream-urls">
-                    <div class="url-chip" title="${copySnapURL}">
-                      <span>${copySnapURL}</span>
-                      <button class="copy-btn" onclick="copyToClipboard('${copySnapURL}', this)">Copy Snapshot</button>
+                    <div class="url-chip" id="chip-snap-${cam.id}" title="${escapeHtml(copySnapURL)}">
+                      <span id="url-snap-${cam.id}">${escapeHtml(copySnapURL)}</span>
+                      <button class="copy-btn" id="btn-copy-snap-${cam.id}" onclick="copyToClipboard('${escapeHtml(copySnapURL)}', this)">Copy Snapshot</button>
                     </div>
-                    <div class="url-chip" title="${copyMjpegURL}">
-                      <span>${copyMjpegURL}</span>
-                      <button class="copy-btn" onclick="copyToClipboard('${copyMjpegURL}', this)">Copy MJPEG</button>
+                    <div class="url-chip" id="chip-mjpeg-${cam.id}" title="${escapeHtml(copyMjpegURL)}">
+                      <span id="url-mjpeg-${cam.id}">${escapeHtml(copyMjpegURL)}</span>
+                      <button class="copy-btn" id="btn-copy-mjpeg-${cam.id}" onclick="copyToClipboard('${escapeHtml(copyMjpegURL)}', this)">Copy MJPEG</button>
                     </div>
-                    <div class="url-chip" title="${copyRtspURL}">
-                      <span>${copyRtspURL}</span>
-                      <button class="copy-btn" onclick="copyToClipboard('${copyRtspURL}', this)">Copy RTSP</button>
+                    <div class="url-chip" id="chip-rtsp-${cam.id}" title="${escapeHtml(copyRtspURL)}">
+                      <span id="url-rtsp-${cam.id}">${escapeHtml(copyRtspURL)}</span>
+                      <button class="copy-btn" id="btn-copy-rtsp-${cam.id}" onclick="copyToClipboard('${escapeHtml(copyRtspURL)}', this)">Copy RTSP</button>
                     </div>
                   </div>
                 </div>
@@ -606,6 +616,28 @@
             if (clients) clients.innerText = cam.active_clients || 0;
             const bytes = document.getElementById(`bytes-${cam.id}`);
             if (bytes) bytes.innerText = formatBytes(cam.bytes_received);
+
+            // Update URL chips text, titles, and click handlers in case auth configuration changed
+            const urlSnap = document.getElementById(`url-snap-${cam.id}`);
+            if (urlSnap) urlSnap.textContent = copySnapURL;
+            const chipSnap = document.getElementById(`chip-snap-${cam.id}`);
+            if (chipSnap) chipSnap.title = copySnapURL;
+            const btnCopySnap = document.getElementById(`btn-copy-snap-${cam.id}`);
+            if (btnCopySnap) btnCopySnap.onclick = function() { copyToClipboard(copySnapURL, this); };
+
+            const urlMjpeg = document.getElementById(`url-mjpeg-${cam.id}`);
+            if (urlMjpeg) urlMjpeg.textContent = copyMjpegURL;
+            const chipMjpeg = document.getElementById(`chip-mjpeg-${cam.id}`);
+            if (chipMjpeg) chipMjpeg.title = copyMjpegURL;
+            const btnCopyMjpeg = document.getElementById(`btn-copy-mjpeg-${cam.id}`);
+            if (btnCopyMjpeg) btnCopyMjpeg.onclick = function() { copyToClipboard(copyMjpegURL, this); };
+
+            const urlRtsp = document.getElementById(`url-rtsp-${cam.id}`);
+            if (urlRtsp) urlRtsp.textContent = copyRtspURL;
+            const chipRtsp = document.getElementById(`chip-rtsp-${cam.id}`);
+            if (chipRtsp) chipRtsp.title = copyRtspURL;
+            const btnCopyRtsp = document.getElementById(`btn-copy-rtsp-${cam.id}`);
+            if (btnCopyRtsp) btnCopyRtsp.onclick = function() { copyToClipboard(copyRtspURL, this); };
           }
         });
 
