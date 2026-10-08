@@ -193,13 +193,11 @@ func (s *RTSPServer) OnDescribe(ctx *gortsplib.ServerHandlerOnDescribeCtx) (*bas
 		return &base.Response{StatusCode: base.StatusNotFound}, nil, nil
 	}
 
-	// Downstream client authentication check (AuthMode: none, custom, or passthrough)
-	if expUser, expPass, required := cam.GetExpectedCredentials(); required {
-		if !ctx.Conn.VerifyCredentials(ctx.Request, expUser, expPass) {
-			return &base.Response{
-				StatusCode: base.StatusUnauthorized,
-			}, nil, liberrors.ErrServerAuth{}
-		}
+	// Downstream client authentication check (Global users, Camera custom/passthrough, or web credentials)
+	if !s.verifyRTSPClientAuth(ctx.Conn, ctx.Request, cam) {
+		return &base.Response{
+			StatusCode: base.StatusUnauthorized,
+		}, nil, liberrors.ErrServerAuth{}
 	}
 
 	// If camera is on-demand and not connected yet, trigger connection and wait
@@ -248,12 +246,10 @@ func (s *RTSPServer) OnSetup(ctx *gortsplib.ServerHandlerOnSetupCtx) (*base.Resp
 
 	if s.manager != nil {
 		if cam, ok := s.manager.Get(camID); ok {
-			if expUser, expPass, required := cam.GetExpectedCredentials(); required {
-				if !ctx.Conn.VerifyCredentials(ctx.Request, expUser, expPass) {
-					return &base.Response{
-						StatusCode: base.StatusUnauthorized,
-					}, nil, liberrors.ErrServerAuth{}
-				}
+			if !s.verifyRTSPClientAuth(ctx.Conn, ctx.Request, cam) {
+				return &base.Response{
+					StatusCode: base.StatusUnauthorized,
+				}, nil, liberrors.ErrServerAuth{}
 			}
 		}
 	}
@@ -365,3 +361,50 @@ func (s *RTSPServer) OnStreamWriteError(ctx *gortsplib.ServerHandlerOnStreamWrit
 		)
 	}
 }
+
+// verifyRTSPClientAuth verifies downstream RTSP credentials against:
+// 1. Configured global scoped users with rtsp permission (Option A RBAC)
+// 2. Camera-specific downstream authentication policy
+// 3. Web dashboard superadmin credentials
+func (s *RTSPServer) verifyRTSPClientAuth(conn *gortsplib.ServerConn, req *base.Request, cam *upstream.CameraStream) bool {
+	expUser, expPass, cameraAuthRequired := cam.GetExpectedCredentials()
+	hasGlobalUsers := s.manager != nil && s.manager.HasConfiguredUsers()
+
+	// If no auth is required for this camera and no global users are defined, allow immediately
+	if !cameraAuthRequired && !hasGlobalUsers {
+		return true
+	}
+
+	// 1. Check global scoped users who have "rtsp" or "*" permission for this camera
+	if hasGlobalUsers {
+		eligibleUsers := s.manager.UsersForCameraAction(cam.Config.ID, config.ActionRTSP)
+		for _, u := range eligibleUsers {
+			if conn.VerifyCredentials(req, u.Username, u.Password) {
+				return true
+			}
+		}
+	}
+
+	// 2. Check camera-specific downstream credentials (custom or passthrough)
+	if cameraAuthRequired {
+		if conn.VerifyCredentials(req, expUser, expPass) {
+			return true
+		}
+	}
+
+	// 3. Check web dashboard superadmin credentials
+	if s.cfg != nil && s.cfg.Server.WebUsername != "" && s.cfg.Server.WebPassword != "" {
+		if conn.VerifyCredentials(req, s.cfg.Server.WebUsername, s.cfg.Server.WebPassword) {
+			return true
+		}
+	}
+
+	// If camera itself doesn't require auth (only global users defined), check if request has no auth credentials
+	if !cameraAuthRequired {
+		// If the camera is open, unauthenticated requests are allowed
+		return true
+	}
+
+	return false
+}
+

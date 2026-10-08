@@ -14,6 +14,7 @@ import (
 // Manager coordinates all configured camera streams.
 type Manager struct {
 	mu        sync.RWMutex
+	cfg       *config.Config
 	cameras   map[string]*CameraStream
 	cameraIDs []string
 	metrics   *metrics.Metrics
@@ -30,6 +31,7 @@ func NewManager(cfg *config.Config, m *metrics.Metrics, logger *slog.Logger, pub
 	}
 
 	mgr := &Manager{
+		cfg:       cfg,
 		cameras:   make(map[string]*CameraStream),
 		cameraIDs: make([]string, 0, len(cfg.Cameras)),
 		metrics:   m,
@@ -153,4 +155,71 @@ func (m *Manager) Summaries() []CameraSummary {
 		}
 	}
 	return summaries
+}
+
+// CheckUserAccess verifies if a username and password are valid and permitted
+// to execute the specified action on the target camera.
+// Returns (authorized bool, userFound bool).
+func (m *Manager) CheckUserAccess(username, password, cameraID string, action config.StreamAction) (bool, bool) {
+	if m == nil || m.cfg == nil || len(m.cfg.Users) == 0 {
+		return false, false
+	}
+
+	for _, u := range m.cfg.Users {
+		if u.Username == username && u.Password == password {
+			// User exists and credentials match. Check permissions.
+			for _, perm := range u.Permissions {
+				if perm.Camera == "*" || perm.Camera == cameraID {
+					for _, allowed := range perm.Allow {
+						if allowed == config.ActionAll || allowed == action {
+							return true, true
+						}
+					}
+				}
+			}
+			return false, true // User matched but lacks permission for this camera/action
+		}
+	}
+
+	return false, false
+}
+
+// FindUser returns the UserConfig if the user exists and credentials match.
+func (m *Manager) FindUser(username, password string) (*config.UserConfig, bool) {
+	if m == nil || m.cfg == nil {
+		return nil, false
+	}
+	for _, u := range m.cfg.Users {
+		if u.Username == username && u.Password == password {
+			copyU := u
+			return &copyU, true
+		}
+	}
+	return nil, false
+}
+
+// HasConfiguredUsers returns true if any global users are configured.
+func (m *Manager) HasConfiguredUsers() bool {
+	return m != nil && m.cfg != nil && len(m.cfg.Users) > 0
+}
+
+// UsersForCameraAction returns all usernames that have access to the given camera and action.
+func (m *Manager) UsersForCameraAction(cameraID string, action config.StreamAction) []config.UserConfig {
+	if m == nil || m.cfg == nil {
+		return nil
+	}
+	var matched []config.UserConfig
+	for _, u := range m.cfg.Users {
+		for _, perm := range u.Permissions {
+			if perm.Camera == "*" || perm.Camera == cameraID {
+				for _, allowed := range perm.Allow {
+					if allowed == config.ActionAll || allowed == action {
+						matched = append(matched, u)
+						break
+					}
+				}
+			}
+		}
+	}
+	return matched
 }

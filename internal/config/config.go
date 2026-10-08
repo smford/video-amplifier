@@ -118,10 +118,37 @@ type CameraConfig struct {
 	SyntheticKeepAlives *bool      `yaml:"synthetic_keepalives"` // Enable synthetic keep-alive stream injection (default: true)
 }
 
+// StreamAction represents a permissible stream endpoint type.
+type StreamAction string
+
+const (
+	ActionAll      StreamAction = "*"
+	ActionSnapshot StreamAction = "snapshot"
+	ActionMJPEG    StreamAction = "mjpeg"
+	ActionRTSP     StreamAction = "rtsp"
+	ActionWHEP     StreamAction = "whep"
+	ActionFMP4     StreamAction = "fmp4"
+	ActionONVIF    StreamAction = "onvif"
+)
+
+// PermissionConfig grants access to a specific camera (or "*" for all) and set of actions.
+type PermissionConfig struct {
+	Camera string         `yaml:"camera"` // Camera ID or "*" for all cameras
+	Allow  []StreamAction `yaml:"allow"`  // e.g. ["snapshot", "mjpeg", "rtsp", "*"]
+}
+
+// UserConfig represents a downstream authenticated user with scoped permissions.
+type UserConfig struct {
+	Username    string             `yaml:"username"`
+	Password    string             `yaml:"password"`
+	Permissions []PermissionConfig `yaml:"permissions"`
+}
+
 // Config is the top-level configuration structure.
 type Config struct {
 	Server  ServerConfig   `yaml:"server"`
 	Cameras []CameraConfig `yaml:"cameras"`
+	Users   []UserConfig   `yaml:"users,omitempty"`
 }
 
 // DefaultConfig returns a Config populated with production-safe defaults.
@@ -319,6 +346,17 @@ func (c *Config) ValidateAndSetDefaults() error {
 		}
 	}
 
+	seenUsers := make(map[string]bool)
+	for i, u := range c.Users {
+		if strings.TrimSpace(u.Username) == "" {
+			return fmt.Errorf("user[%d]: username must not be empty", i)
+		}
+		if seenUsers[u.Username] {
+			return fmt.Errorf("user %q: duplicate username", u.Username)
+		}
+		seenUsers[u.Username] = true
+	}
+
 	return nil
 }
 
@@ -374,6 +412,27 @@ cameras:
     idle_timeout: "30s"
     client_buffer_size: 30
     retry_interval: "5s"
+
+# Option A: Scoped downstream users and permissions (optional)
+# Grant granular stream access (snapshot, mjpeg, rtsp, whep, fmp4, or *) per camera
+users:
+  - username: "frigate"
+    password: "secret_nvr_password"
+    permissions:
+      - camera: "*"
+        allow: ["rtsp"]               # NVR only gets raw RTSP across all cameras
+
+  - username: "homeassistant"
+    password: "secret_ha_password"
+    permissions:
+      - camera: "*"
+        allow: ["snapshot", "mjpeg"]  # HA gets snapshots and dashboard streams
+
+  - username: "wallpanel"
+    password: "secret_tablet_password"
+    permissions:
+      - camera: "front-door"
+        allow: ["snapshot", "mjpeg"]  # Tablet only gets front-door snapshots & MJPEG
 `
 }
 

@@ -192,12 +192,13 @@ func (s *HTTPServer) handleCameraRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate downstream credentials (AuthMode: none, custom, or passthrough)
-	if !s.authorizeCameraRequest(w, r, cam) {
+	action := parts[1]
+	streamAction := mapHTTPActionToStreamAction(action)
+	// Validate downstream credentials (AuthMode: none, custom, passthrough, or global users)
+	if !s.authorizeCameraRequest(w, r, cam, streamAction) {
 		return
 	}
 
-	action := parts[1]
 	switch action {
 	case "mjpeg", "stream.mjpg":
 		s.streamMJPEG(w, r, cam)
@@ -260,7 +261,7 @@ func (s *HTTPServer) handleRootSnapshot(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, fmt.Sprintf("camera %q not found", camID), http.StatusNotFound)
 		return
 	}
-	if !s.authorizeCameraRequest(w, r, cam) {
+	if !s.authorizeCameraRequest(w, r, cam, config.ActionSnapshot) {
 		return
 	}
 	s.serveSnapshot(w, r, cam)
@@ -282,7 +283,8 @@ func (s *HTTPServer) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 
 		cam, ok := s.manager.Get(camID)
 		if ok {
-			if !s.authorizeCameraRequest(w, r, cam) {
+			streamAction := mapHTTPActionToStreamAction(action)
+			if !s.authorizeCameraRequest(w, r, cam, streamAction) {
 				return
 			}
 			switch action {
@@ -308,32 +310,76 @@ func (s *HTTPServer) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-// authorizeCameraRequest validates downstream HTTP credentials against camera authentication policy.
-// If valid web credentials (WebUsername / WebPassword) are provided, the request is also authorized,
-// allowing dashboard users to view snapshots and streams without a credential conflict.
-func (s *HTTPServer) authorizeCameraRequest(w http.ResponseWriter, r *http.Request, cam *upstream.CameraStream) bool {
-	_, _, required := cam.GetExpectedCredentials()
-	if !required {
-		return true // Auth is disabled for this camera
+// mapHTTPActionToStreamAction maps an HTTP action string to a config.StreamAction.
+func mapHTTPActionToStreamAction(action string) config.StreamAction {
+	switch action {
+	case "snapshot.jpg", "snapshot":
+		return config.ActionSnapshot
+	case "mjpeg", "stream.mjpg":
+		return config.ActionMJPEG
+	case "whep":
+		return config.ActionWHEP
+	case "fmp4", "live.mp4", "ws", "fmp4.ws":
+		return config.ActionFMP4
+	case "onvif", "device_service":
+		return config.ActionONVIF
+	default:
+		return config.ActionAll
+	}
+}
+
+// authorizeCameraRequest validates downstream HTTP credentials against:
+// 1. Configured global scoped users (Option A RBAC)
+// 2. Camera-specific downstream authentication policy
+// 3. Web dashboard superadmin credentials (to avoid login loops in the web UI)
+func (s *HTTPServer) authorizeCameraRequest(w http.ResponseWriter, r *http.Request, cam *upstream.CameraStream, action config.StreamAction) bool {
+	_, _, cameraAuthRequired := cam.GetExpectedCredentials()
+	hasGlobalUsers := s.manager != nil && s.manager.HasConfiguredUsers()
+
+	// If no auth is required for this camera and no global users are defined, allow immediately
+	if !cameraAuthRequired && !hasGlobalUsers {
+		return true
 	}
 
 	user, pass, ok := r.BasicAuth()
 	if !ok {
+		// If camera doesn't require auth on its own and no auth header was provided, allow access
+		if !cameraAuthRequired {
+			return true
+		}
 		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="video-amplifier (%s)"`, cam.Config.Name))
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return false
 	}
 
-	// 1. Check camera credentials
+	// 1. Check global scoped users (RBAC)
+	if hasGlobalUsers {
+		if allowed, userFound := s.manager.CheckUserAccess(user, pass, cam.Config.ID, action); userFound {
+			if allowed {
+				return true
+			}
+			// User exists but does not have permission for this camera/action
+			w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="video-amplifier (%s)"`, cam.Config.Name))
+			http.Error(w, "forbidden: insufficient permissions", http.StatusForbidden)
+			return false
+		}
+	}
+
+	// 2. Check camera-specific downstream credentials
 	if cam.ValidateCredentials(user, pass) {
 		return true
 	}
 
-	// 2. Check if valid web dashboard credentials were used
+	// 3. Check web dashboard superadmin credentials (to prevent login loops in the web UI)
 	if s.cfg.Server.WebUsername != "" && s.cfg.Server.WebPassword != "" {
 		if user == s.cfg.Server.WebUsername && pass == s.cfg.Server.WebPassword {
 			return true
 		}
+	}
+
+	// If camera itself doesn't require auth and credentials weren't recognized as a known user, allow
+	if !cameraAuthRequired {
+		return true
 	}
 
 	w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Basic realm="video-amplifier (%s)"`, cam.Config.Name))

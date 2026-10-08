@@ -605,5 +605,116 @@ func TestHTTPServer_WebDashboardBasicAuth(t *testing.T) {
 	}
 }
 
+func TestHTTPServer_OptionA_ScopedUsersAndPermissions(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Cameras = []config.CameraConfig{
+		{
+			ID:          "garden",
+			Name:        "Garden",
+			UpstreamURL: "rtsp://localhost/garden",
+			AuthMode:    config.AuthModeCustom,
+			DownstreamUsername: "defaultuser",
+			DownstreamPassword: "defaultpass",
+		},
+		{
+			ID:          "driveway",
+			Name:        "Driveway",
+			UpstreamURL: "rtsp://localhost/driveway",
+			AuthMode:    config.AuthModeCustom,
+			DownstreamUsername: "defaultuser",
+			DownstreamPassword: "defaultpass",
+		},
+	}
+	cfg.Users = []config.UserConfig{
+		{
+			Username: "ha_viewer",
+			Password: "ha_secret",
+			Permissions: []config.PermissionConfig{
+				{
+					Camera: "*",
+					Allow:  []config.StreamAction{config.ActionSnapshot}, // Only snapshot, on all cameras
+				},
+			},
+		},
+		{
+			Username: "garden_tablet",
+			Password: "tablet_secret",
+			Permissions: []config.PermissionConfig{
+				{
+					Camera: "garden",
+					Allow:  []config.StreamAction{config.ActionSnapshot, config.ActionMJPEG}, // Only garden, snapshot & mjpeg
+				},
+			},
+		},
+	}
+
+	m := metrics.NewMetrics(nil)
+	mgr := upstream.NewManager(cfg, m, nil, nil)
+	mockJPEG := []byte("\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00\xFF\xDB\x00C\x00\xFF\xD9")
+	if cam, ok := mgr.Get("garden"); ok {
+		cam.UpdateSnapshot(mockJPEG)
+	}
+	if cam, ok := mgr.Get("driveway"); ok {
+		cam.UpdateSnapshot(mockJPEG)
+	}
+
+	server := NewHTTPServer(cfg, mgr, nil)
+
+	// 1. ha_viewer accessing /cameras/garden/snapshot.jpg -> allowed (200 OK)
+	req1 := httptest.NewRequest(http.MethodGet, "/cameras/garden/snapshot.jpg", nil)
+	req1.SetBasicAuth("ha_viewer", "ha_secret")
+	w1 := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(w1, req1)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected 200 for ha_viewer snapshot on garden, got %d", w1.Code)
+	}
+
+	// 2. ha_viewer accessing /cameras/driveway/snapshot.jpg -> allowed (200 OK via Camera: "*")
+	req2 := httptest.NewRequest(http.MethodGet, "/cameras/driveway/snapshot.jpg", nil)
+	req2.SetBasicAuth("ha_viewer", "ha_secret")
+	w2 := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200 for ha_viewer snapshot on driveway, got %d", w2.Code)
+	}
+
+	// 3. ha_viewer accessing /cameras/garden/mjpeg -> forbidden (403 Forbidden)
+	req3 := httptest.NewRequest(http.MethodGet, "/cameras/garden/mjpeg", nil)
+	req3.SetBasicAuth("ha_viewer", "ha_secret")
+	w3 := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(w3, req3)
+	if w3.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 Forbidden for ha_viewer attempting mjpeg, got %d", w3.Code)
+	}
+
+	// 4. garden_tablet accessing /cameras/garden/snapshot.jpg -> allowed (200 OK)
+	req4 := httptest.NewRequest(http.MethodGet, "/cameras/garden/snapshot.jpg", nil)
+	req4.SetBasicAuth("garden_tablet", "tablet_secret")
+	w4 := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(w4, req4)
+	if w4.Code != http.StatusOK {
+		t.Fatalf("expected 200 for garden_tablet snapshot on garden, got %d", w4.Code)
+	}
+
+	// 5. garden_tablet accessing /cameras/driveway/snapshot.jpg -> forbidden (403 Forbidden, camera not granted)
+	req5 := httptest.NewRequest(http.MethodGet, "/cameras/driveway/snapshot.jpg", nil)
+	req5.SetBasicAuth("garden_tablet", "tablet_secret")
+	w5 := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(w5, req5)
+	if w5.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for garden_tablet accessing driveway snapshot, got %d", w5.Code)
+	}
+
+	// 6. Default camera credentials (defaultuser:defaultpass) -> allowed (backward compatibility)
+	req6 := httptest.NewRequest(http.MethodGet, "/cameras/driveway/snapshot.jpg", nil)
+	req6.SetBasicAuth("defaultuser", "defaultpass")
+	w6 := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(w6, req6)
+	if w6.Code != http.StatusOK {
+		t.Fatalf("expected 200 for defaultuser accessing driveway snapshot, got %d", w6.Code)
+	}
+}
+
+
 
 

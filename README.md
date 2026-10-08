@@ -138,8 +138,28 @@ cameras:
     mode: "on-demand"
     idle_timeout: "30s"
     client_buffer_size: 30
-    retry_interval: "5s"
     auth_mode: "passthrough"     # Require clients to authenticate with upstream credentials ("admin" / "pass")
+
+# Optional: Scoped downstream users and permissions (Option A)
+# Allows granting specific endpoint capabilities (snapshot, mjpeg, rtsp, whep, fmp4, or *) per camera
+users:
+  - username: "frigate"
+    password: "secret_nvr_password"
+    permissions:
+      - camera: "*"
+        allow: ["rtsp"]               # NVR only gets raw RTSP across all cameras
+
+  - username: "homeassistant"
+    password: "secret_ha_password"
+    permissions:
+      - camera: "*"
+        allow: ["snapshot", "mjpeg"]  # Home Assistant gets snapshots & web streams
+
+  - username: "wallpanel"
+    password: "secret_tablet_password"
+    permissions:
+      - camera: "front-door"
+        allow: ["snapshot", "mjpeg"]  # Wall tablet restricted to front-door camera only
 ```
 
 ### Environment Variable Overrides
