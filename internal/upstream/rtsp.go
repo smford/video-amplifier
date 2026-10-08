@@ -230,19 +230,23 @@ func (d *RTSPDriver) Start(ctx context.Context) error {
 			lastKeyframeTime = now
 		}
 
-		// Differentiate ONVIF / metadata track vs video / audio media (ITEM 7)
+		// Differentiate media track types
 		isMetadata := (medi.Type == "application" || medi.Type == "metadata")
+		isAudio := (medi.Type == description.MediaTypeAudio)
 
-		if isMetadata && serverStream != nil {
-			// Forward timed ONVIF XML/RTP metadata packet directly
+		if (isMetadata || isAudio) && serverStream != nil {
+			// Forward timed ONVIF XML/RTP metadata and audio packets directly to downstream consumers
 			if err := serverStream.WritePacketRTP(medi, pkt); err != nil {
-				d.stream.logger.Debug("ServerStream write metadata packet error", slog.Any("error", err))
+				d.stream.logger.Debug("ServerStream write auxiliary track packet error",
+					slog.String("media_type", string(medi.Type)),
+					slog.Any("error", err),
+				)
 			}
 			return
 		}
 
 		if serverStream != nil {
-			// Rebase sequence numbers and timestamps to prevent downstream player crashes
+			// Rebase sequence numbers and timestamps to prevent downstream video player crashes
 			outPkt, drop := d.rebaser.RebaseProcess(pkt, frameInfo.IsKeyframe, now)
 			if drop || outPkt == nil {
 				return
