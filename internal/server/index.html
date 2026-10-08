@@ -220,7 +220,8 @@
       justify-content: center;
       overflow: hidden;
     }
-    .video-viewport img {
+    .video-viewport img,
+    .video-viewport video {
       width: 100%;
       height: 100%;
       object-fit: contain;
@@ -346,7 +347,8 @@
           <option value="10000">Snapshots (Every 10s)</option>
           <option value="30000">Snapshots (Every 30s)</option>
           <option value="60000">Snapshots (Every 60s)</option>
-          <option value="live">Live Stream (Continuous All)</option>
+          <option value="webrtc">WebRTC / WHEP (Low Latency All)</option>
+          <option value="live">MJPEG (Continuous All)</option>
           <option value="0">Manual Refresh only</option>
         </select>
         <button id="refresh-now-btn" class="header-btn" style="cursor:pointer;" onclick="manualRefresh()">Refresh Now</button>
@@ -405,31 +407,118 @@
     }
 
     let cachedCameras = [];
-    let cameraModes = {}; // camId -> 'snap' | 'live'
+    let cameraModes = {}; // camId -> 'snap' | 'live' | 'webrtc'
+    let peerConnections = {}; // camId -> RTCPeerConnection
     let refreshTimer = null;
     let refreshIntervalMs = 5000;
+
+    function stopWebRTC(camId) {
+      if (peerConnections[camId]) {
+        try {
+          peerConnections[camId].close();
+        } catch (e) {}
+        delete peerConnections[camId];
+      }
+    }
+
+    async function startWebRTC(camId) {
+      stopWebRTC(camId);
+      const videoEl = document.getElementById(`video-${camId}`);
+      const timeEl = document.getElementById(`overlay-time-${camId}`);
+      if (!videoEl) return;
+
+      try {
+        const pc = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+        peerConnections[camId] = pc;
+
+        pc.addTransceiver('video', { direction: 'recvonly' });
+
+        pc.ontrack = (event) => {
+          if (videoEl && event.streams && event.streams[0]) {
+            videoEl.srcObject = event.streams[0];
+            videoEl.play().catch(e => console.log('Autoplay deferred:', e));
+          }
+        };
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // Wait for ICE gathering or send offer
+        await new Promise((resolve) => {
+          if (pc.iceGatheringState === 'complete') {
+            resolve();
+          } else {
+            const checkState = () => {
+              if (pc.iceGatheringState === 'complete') {
+                pc.removeEventListener('icegatheringstatechange', checkState);
+                resolve();
+              }
+            };
+            pc.addEventListener('icegatheringstatechange', checkState);
+            setTimeout(resolve, 1500); // Max 1.5s gathering wait
+          }
+        });
+
+        const resp = await fetch(`/cameras/${camId}/whep`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/sdp' },
+          body: pc.localDescription.sdp
+        });
+
+        if (!resp.ok) {
+          throw new Error(`WHEP endpoint returned ${resp.status}`);
+        }
+
+        const answerSDP = await resp.text();
+        await pc.setRemoteDescription({ type: 'answer', sdp: answerSDP });
+        if (timeEl) timeEl.textContent = 'WEBRTC (WHEP)';
+      } catch (err) {
+        console.warn(`WebRTC connection failed for ${camId}, falling back to MJPEG:`, err);
+        if (timeEl) timeEl.textContent = 'LIVE (MJPEG Fallback)';
+        // Fallback to MJPEG live mode
+        setCameraMode(camId, 'live');
+      }
+    }
 
     function setCameraMode(camId, mode) {
       cameraModes[camId] = mode;
       const imgEl = document.getElementById(`img-${camId}`);
+      const videoEl = document.getElementById(`video-${camId}`);
       const timeEl = document.getElementById(`overlay-time-${camId}`);
       const btnSnap = document.getElementById(`btn-snap-${camId}`);
       const btnLive = document.getElementById(`btn-live-${camId}`);
+      const btnWebrtc = document.getElementById(`btn-webrtc-${camId}`);
 
-      if (mode === 'live') {
-        if (btnSnap) btnSnap.classList.remove('active');
-        if (btnLive) btnLive.classList.add('active');
-        if (timeEl) timeEl.textContent = 'LIVE STREAM';
-        if (imgEl) {
-          imgEl.src = `/cameras/${camId}/mjpeg`;
-        }
+      if (btnSnap) btnSnap.classList.toggle('active', mode === 'snap');
+      if (btnLive) btnLive.classList.toggle('active', mode === 'live');
+      if (btnWebrtc) btnWebrtc.classList.toggle('active', mode === 'webrtc');
+
+      if (mode === 'webrtc') {
+        if (imgEl) imgEl.style.display = 'none';
+        if (videoEl) videoEl.style.display = 'block';
+        if (timeEl) timeEl.textContent = 'CONNECTING WEBRTC...';
+        startWebRTC(camId);
       } else {
-        if (btnSnap) btnSnap.classList.add('active');
-        if (btnLive) btnLive.classList.remove('active');
-        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        if (timeEl) timeEl.textContent = `Snapshot · ${timeStr}`;
-        if (imgEl) {
-          imgEl.src = `/cameras/${camId}/snapshot.jpg?t=${Date.now()}`;
+        stopWebRTC(camId);
+        if (videoEl) {
+          videoEl.style.display = 'none';
+          videoEl.srcObject = null;
+        }
+        if (imgEl) imgEl.style.display = 'block';
+
+        if (mode === 'live') {
+          if (timeEl) timeEl.textContent = 'LIVE MJPEG';
+          if (imgEl) {
+            imgEl.src = `/cameras/${camId}/mjpeg`;
+          }
+        } else {
+          const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          if (timeEl) timeEl.textContent = `Snapshot · ${timeStr}`;
+          if (imgEl) {
+            imgEl.src = `/cameras/${camId}/snapshot.jpg?t=${Date.now()}`;
+          }
         }
       }
     }
@@ -438,13 +527,13 @@
       const now = Date.now();
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       cachedCameras.forEach(cam => {
-        if (cameraModes[cam.id] === 'live') return;
+        if (cameraModes[cam.id] === 'live' || cameraModes[cam.id] === 'webrtc') return;
 
         const imgEl = document.getElementById(`img-${cam.id}`);
         if (!imgEl) return;
         const newImg = new Image();
         newImg.onload = () => {
-          if (cameraModes[cam.id] !== 'live') {
+          if (cameraModes[cam.id] !== 'live' && cameraModes[cam.id] !== 'webrtc') {
             imgEl.src = newImg.src;
             const timeEl = document.getElementById(`overlay-time-${cam.id}`);
             if (timeEl) timeEl.textContent = `Snapshot · ${timeStr}`;
@@ -468,7 +557,11 @@
     }
 
     function onIntervalChange(val) {
-      if (val === 'live') {
+      if (val === 'webrtc') {
+        refreshIntervalMs = 0;
+        restartTimer();
+        cachedCameras.forEach(cam => setCameraMode(cam.id, 'webrtc'));
+      } else if (val === 'live') {
         refreshIntervalMs = 0;
         restartTimer();
         cachedCameras.forEach(cam => setCameraMode(cam.id, 'live'));
@@ -538,8 +631,11 @@
           // Direct browser playback URLs (browser will prompt for credentials via HTTP basic auth if required)
           const mjpegURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/mjpeg';
           const snapURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
+          const whepURL = window.location.protocol + '//' + window.location.host + '/cameras/' + cam.id + '/whep';
           const initialSrc = mode === 'live' ? mjpegURL : `${snapURL}?t=${now}`;
-          const overlayText = mode === 'live' ? 'LIVE STREAM' : `Snapshot &bull; ${timeStr}`;
+          let overlayText = `Snapshot &bull; ${timeStr}`;
+          if (mode === 'webrtc') overlayText = 'WEBRTC (WHEP)';
+          else if (mode === 'live') overlayText = 'LIVE MJPEG';
 
           // Link representations:
           // 1. Displayed in UI (masked for security): e.g. rtsp://***:***@host:8554/id
@@ -560,10 +656,12 @@
 
           const displaySnapURL = window.location.protocol + '//' + displayAuthPrefix + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
           const displayMjpegURL = window.location.protocol + '//' + displayAuthPrefix + window.location.host + '/cameras/' + cam.id + '/mjpeg';
+          const displayWhepURL = window.location.protocol + '//' + displayAuthPrefix + window.location.host + '/cameras/' + cam.id + '/whep';
           const displayRtspURL = 'rtsp://' + displayAuthPrefix + hostname + ':8554/' + cam.id;
 
           const copySnapURL = window.location.protocol + '//' + copyAuthPrefix + window.location.host + '/cameras/' + cam.id + '/snapshot.jpg';
           const copyMjpegURL = window.location.protocol + '//' + copyAuthPrefix + window.location.host + '/cameras/' + cam.id + '/mjpeg';
+          const copyWhepURL = window.location.protocol + '//' + copyAuthPrefix + window.location.host + '/cameras/' + cam.id + '/whep';
           const copyRtspURL = 'rtsp://' + copyAuthPrefix + hostname + ':8554/' + cam.id;
 
           if (!card) {
@@ -583,13 +681,15 @@
                     <span class="badge ${getBadgeClass(cam.state)}" id="badge-state-${cam.id}">${escapeHtml(cam.state)}</span>
                     <div class="view-toggle">
                       <button id="btn-snap-${cam.id}" class="${mode === 'snap' ? 'active' : ''}" onclick="setCameraMode('${cam.id}', 'snap')">Snap</button>
-                      <button id="btn-live-${cam.id}" class="${mode === 'live' ? 'active' : ''}" onclick="setCameraMode('${cam.id}', 'live')">Live</button>
+                      <button id="btn-live-${cam.id}" class="${mode === 'live' ? 'active' : ''}" onclick="setCameraMode('${cam.id}', 'live')">MJPEG</button>
+                      <button id="btn-webrtc-${cam.id}" class="${mode === 'webrtc' ? 'active' : ''}" onclick="setCameraMode('${cam.id}', 'webrtc')">WebRTC</button>
                     </div>
                   </div>
                 </div>
 
                 <div class="video-viewport">
-                  <img id="img-${cam.id}" src="${initialSrc}" alt="${escapeHtml(cam.name)}" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg?t=' + Date.now();" />
+                  <video id="video-${cam.id}" playsinline autoplay muted style="display:${mode === 'webrtc' ? 'block' : 'none'};"></video>
+                  <img id="img-${cam.id}" src="${initialSrc}" alt="${escapeHtml(cam.name)}" style="display:${mode === 'webrtc' ? 'none' : 'block'};" onerror="this.onerror=null; this.src='/cameras/${cam.id}/snapshot.jpg?t=' + Date.now();" />
                   <div class="video-overlay">
                     <div class="live-dot" id="dot-${cam.id}"></div>
                     <span id="overlay-time-${cam.id}">${overlayText}</span>
@@ -611,6 +711,10 @@
                       <span id="url-mjpeg-${cam.id}">${escapeHtml(displayMjpegURL)}</span>
                       <button class="copy-btn" id="btn-copy-mjpeg-${cam.id}" onclick="copyToClipboard('${escapeHtml(copyMjpegURL)}', this)">Copy MJPEG</button>
                     </div>
+                    <div class="url-chip" id="chip-whep-${cam.id}" title="${escapeHtml(displayWhepURL)}">
+                      <span id="url-whep-${cam.id}">${escapeHtml(displayWhepURL)}</span>
+                      <button class="copy-btn" id="btn-copy-whep-${cam.id}" onclick="copyToClipboard('${escapeHtml(copyWhepURL)}', this)">Copy WHEP</button>
+                    </div>
                     <div class="url-chip" id="chip-rtsp-${cam.id}" title="${escapeHtml(displayRtspURL)}">
                       <span id="url-rtsp-${cam.id}">${escapeHtml(displayRtspURL)}</span>
                       <button class="copy-btn" id="btn-copy-rtsp-${cam.id}" onclick="copyToClipboard('${escapeHtml(copyRtspURL)}', this)">Copy RTSP</button>
@@ -620,6 +724,9 @@
               </div>
             `;
             grid.insertAdjacentHTML('beforeend', cardHtml);
+            if (mode === 'webrtc') {
+              startWebRTC(cam.id);
+            }
           } else {
             const badge = document.getElementById(`badge-state-${cam.id}`);
             if (badge) {
@@ -650,6 +757,13 @@
             if (chipMjpeg) chipMjpeg.title = displayMjpegURL;
             const btnCopyMjpeg = document.getElementById(`btn-copy-mjpeg-${cam.id}`);
             if (btnCopyMjpeg) btnCopyMjpeg.onclick = function() { copyToClipboard(copyMjpegURL, this); };
+
+            const urlWhep = document.getElementById(`url-whep-${cam.id}`);
+            if (urlWhep) urlWhep.textContent = displayWhepURL;
+            const chipWhep = document.getElementById(`chip-whep-${cam.id}`);
+            if (chipWhep) chipWhep.title = displayWhepURL;
+            const btnCopyWhep = document.getElementById(`btn-copy-whep-${cam.id}`);
+            if (btnCopyWhep) btnCopyWhep.onclick = function() { copyToClipboard(copyWhepURL, this); };
 
             const urlRtsp = document.getElementById(`url-rtsp-${cam.id}`);
             if (urlRtsp) urlRtsp.textContent = displayRtspURL;
