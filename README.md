@@ -93,8 +93,17 @@ flowchart TD
 ### 5. Self-Contained Web Interface & Live Dashboard
 - **Responsive Multi-Stream Grid**: Directly monitor all camera streams at `http://localhost:8080/` (or `/ui` / `/dashboard`) via a modern dark-mode layout.
 - **Air-Gapped Operation**: 100% self-contained with embedded HTML/CSS/JS (zero external CDNs or external asset fetches), ensuring full functionality in isolated security subnets.
-- **Stream URL Chips & One-Click Copy**: Instantly copy downstream RTSP, MJPEG, and snapshot URLs for integration into Home Assistant, Frigate, or web dashboards.
+- **Stream URL Chips & One-Click Copy**: Visual chips display copyable downstream RTSP, MJPEG, and snapshot URLs for integration into Home Assistant, Frigate, or web dashboards, masking credentials visually while copying functional URLs.
 - **Real-Time Telemetry**: Automatically polls `/cameras` every 3 seconds to display live connection states, active downstream viewer counts, and cumulative ingested bandwidth.
+
+### 6. Authentication & Role-Based Access Control (RBAC)
+- **Scoped Downstream Users (`users:`)**: Define declarative users with granular permissions restricted by camera ID (or `*`) and stream type (`snapshot`, `mjpeg`, `rtsp`, `whep`, `fmp4`, `onvif`, or `*`).
+- **Web Dashboard Protection (`web_username` / `web_password`)**: Secure the main UI and status endpoints with HTTP Basic Authentication.
+- **Camera-Specific Auth Modes (`auth_mode`)**:
+  - `none`: Open downstream access (default).
+  - `custom`: Dedicated downstream username and password per camera.
+  - `passthrough`: Forward authentication using upstream camera credentials.
+- **Clean 401 / 403 Enforcement**: Unauthorized clients are prompted via `401 Unauthorized`; authenticated clients accessing forbidden cameras or streams receive `403 Forbidden` preventing browser credential loops.
 
 ---
 

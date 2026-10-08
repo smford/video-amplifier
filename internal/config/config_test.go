@@ -159,6 +159,12 @@ func TestWriteSampleConfig(t *testing.T) {
 	if len(cfg.Cameras) == 0 {
 		t.Fatalf("expected cameras in sample config, got 0")
 	}
+	if len(cfg.Users) == 0 {
+		t.Fatalf("expected users in sample config, got 0")
+	}
+	if cfg.Users[0].Username != "frigate" {
+		t.Errorf("expected first user 'frigate', got %q", cfg.Users[0].Username)
+	}
 
 	// Second write without force should fail
 	if err := WriteSampleConfig(targetPath, false); err == nil {
