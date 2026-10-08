@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: "video-amplifier"
+    static_configs:
+      - targets: ["video-amplifier:9090"]
+        labels:
+          service: "video-amplifier"

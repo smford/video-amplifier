@@ -299,6 +299,17 @@ docker run -d \
   video-amplifier:latest
 ```
 
+### Full Observability Stack (Docker Compose + Prometheus + Grafana)
+
+A production-ready monitoring stack is provided under `deploy/`:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d
+```
+* **video-amplifier**: `http://localhost:8080` (Streams, UI) & `http://localhost:8554` (RTSP)
+* **Prometheus**: `http://localhost:9091`
+* **Grafana**: `http://localhost:3000` (admin/admin, pre-provisioned dashboard: `deploy/grafana/dashboard.json`)
+
 ---
 
 ## Verifying Observability
