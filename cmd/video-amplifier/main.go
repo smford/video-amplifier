@@ -8,10 +8,13 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/smford/video-amplifier/internal/app"
 	"github.com/smford/video-amplifier/internal/config"
+	"github.com/smford/video-amplifier/internal/discovery"
 	"github.com/smford/video-amplifier/internal/logging"
 )
 
@@ -22,13 +25,59 @@ var (
 )
 
 func main() {
+	// Handle "video-amplifier scan [flags]" subcommand for ONVIF camera discovery
+	if len(os.Args) > 1 && os.Args[1] == "scan" {
+		scanCmd := flag.NewFlagSet("scan", flag.ExitOnError)
+		timeoutSec := scanCmd.Int("timeout", 3, "Discovery probe timeout in seconds")
+		_ = scanCmd.Parse(os.Args[2:])
+
+		fmt.Printf("Scanning local subnet for ONVIF IP cameras (timeout %ds)...\n", *timeoutSec)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*timeoutSec)*time.Second)
+		defer cancel()
+
+		devices, err := discovery.ProbeLocalNetwork(ctx, time.Duration(*timeoutSec)*time.Second)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error during network discovery: %v\n", err)
+			os.Exit(1)
+		}
+
+		if len(devices) == 0 {
+			fmt.Println("No ONVIF cameras responded to discovery probe.")
+			os.Exit(0)
+		}
+
+		fmt.Printf("Discovered %d camera(s):\n\n", len(devices))
+		for i, dev := range devices {
+			fmt.Printf("[%d] Host: %s\n", i+1, dev.Address)
+			if len(dev.XAddrs) > 0 {
+				fmt.Printf("    ONVIF Endpoint: %s\n", dev.XAddrs[0])
+			}
+			if len(dev.Scopes) > 0 {
+				fmt.Printf("    Scopes: %s\n", strings.Join(dev.Scopes, ", "))
+			}
+			fmt.Println()
+		}
+		os.Exit(0)
+	}
+
 	// Handle "video-amplifier init [flags]" subcommand
 	if len(os.Args) > 1 && os.Args[1] == "init" {
 		initCmd := flag.NewFlagSet("init", flag.ExitOnError)
 		outputPath := initCmd.String("output", "config.yaml", "Destination path for generated configuration file")
 		force := initCmd.Bool("force", false, "Overwrite destination file if it already exists")
 		printStdout := initCmd.Bool("stdout", false, "Print configuration to stdout instead of writing to file")
+		scan := initCmd.Bool("scan", false, "Scan local network for ONVIF cameras and include them in the template")
 		_ = initCmd.Parse(os.Args[2:])
+
+		if *scan {
+			fmt.Println("Scanning local subnet for ONVIF cameras...")
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			devices, _ := discovery.ProbeLocalNetwork(ctx, 3*time.Second)
+			if len(devices) > 0 {
+				fmt.Printf("Discovered %d camera(s) on local subnet\n", len(devices))
+			}
+		}
 
 		if *printStdout {
 			fmt.Print(config.SampleConfigYAML())

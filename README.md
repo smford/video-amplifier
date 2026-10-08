@@ -266,6 +266,21 @@ To generate a production-ready, fully commented configuration file with realisti
 
 # Print configuration to standard output (e.g. for piping)
 ./video-amplifier init -stdout
+
+# Generate configuration while probing local subnet for ONVIF cameras
+./video-amplifier init -scan
+```
+
+### Camera Network Auto-Discovery (`scan`)
+
+`video-amplifier` can actively discover ONVIF-compliant IP cameras on your local LAN / subnet without third-party tools:
+
+```bash
+# Scan local subnet using WS-Discovery multicast probe (default timeout: 3s)
+./video-amplifier scan
+
+# Custom probe timeout
+./video-amplifier scan -timeout 5
 ```
 
 ### Running with Docker
