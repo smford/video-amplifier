@@ -2,6 +2,7 @@ package egress
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -340,4 +341,139 @@ func (m *FMP4Manager) HandleWebSocketStream(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
+}
+
+// HandleDVRClip generates and serves a standalone fragmented MP4 clip from recently buffered DVR packets.
+func (m *FMP4Manager) HandleDVRClip(w http.ResponseWriter, r *http.Request, cam *upstream.CameraStream) {
+	packets := cam.DVRClipPackets()
+	if len(packets) == 0 {
+		http.Error(w, "No DVR packets buffered yet for this camera", http.StatusServiceUnavailable)
+		return
+	}
+
+	decoder := &rtph264.Decoder{}
+	_ = decoder.Init()
+
+	var sps, pps []byte
+	type decodedFrame struct {
+		isIDR     bool
+		nalus     [][]byte
+		timestamp uint32
+	}
+	var frames []decodedFrame
+
+	for _, pkt := range packets {
+		nalus, err := decoder.Decode(pkt)
+		if err != nil || len(nalus) == 0 {
+			continue
+		}
+
+		var hasIDR bool
+		var filtered [][]byte
+		for _, n := range nalus {
+			if len(n) == 0 {
+				continue
+			}
+			nType := h264.NALUType(n[0] & 0x1F)
+			switch nType {
+			case h264.NALUTypeSPS:
+				sps = append([]byte(nil), n...)
+			case h264.NALUTypePPS:
+				pps = append([]byte(nil), n...)
+			case h264.NALUTypeIDR:
+				hasIDR = true
+				filtered = append(filtered, n)
+			default:
+				filtered = append(filtered, n)
+			}
+		}
+
+		if len(filtered) > 0 {
+			frames = append(frames, decodedFrame{
+				isIDR:     hasIDR,
+				nalus:     filtered,
+				timestamp: pkt.Timestamp,
+			})
+		}
+	}
+
+	if len(sps) == 0 || len(pps) == 0 || len(frames) == 0 {
+		http.Error(w, "Insufficient keyframe data to generate DVR MP4 clip", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Find the first IDR frame to ensure valid decode from start
+	firstIDRIdx := -1
+	for i, f := range frames {
+		if f.isIDR {
+			firstIDRIdx = i
+			break
+		}
+	}
+	if firstIDRIdx == -1 {
+		http.Error(w, "No IDR keyframe found in buffered DVR history", http.StatusServiceUnavailable)
+		return
+	}
+	frames = frames[firstIDRIdx:]
+
+	// 1. Build Init Segment
+	initSeg := fmp4.Init{
+		Tracks: []*fmp4.InitTrack{
+			{
+				ID:        1,
+				TimeScale: 90000,
+				Codec: &codecs.H264{
+					SPS: sps,
+					PPS: pps,
+				},
+			},
+		},
+	}
+	var buf seekablebuffer.Buffer
+	if err := initSeg.Marshal(&buf); err != nil {
+		http.Error(w, "Failed to marshal clip init header", http.StatusInternalServerError)
+		return
+	}
+
+	// 2. Build Parts
+	var seqNum uint32 = 1
+	var lastTime uint64 = uint64(frames[0].timestamp)
+	for _, f := range frames {
+		sample, err := fmp4.NewSampleH264(0, f.nalus)
+		if err != nil {
+			continue
+		}
+		sample.IsNonSyncSample = !f.isIDR
+		curTime := uint64(f.timestamp)
+		duration := uint32(3000)
+		if curTime > lastTime {
+			diff := curTime - lastTime
+			if diff < 90000 {
+				duration = uint32(diff)
+			}
+		}
+		sample.Duration = duration
+		lastTime = curTime
+
+		part := fmp4.Part{
+			SequenceNumber: seqNum,
+			Tracks: []*fmp4.PartTrack{
+				{
+					ID:       1,
+					BaseTime: curTime,
+					Samples:  []*fmp4.Sample{sample},
+				},
+			},
+		}
+		seqNum++
+		_ = part.Marshal(&buf)
+	}
+
+	clipBytes := buf.Bytes()
+	w.Header().Set("Content-Type", "video/mp4")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-clip.mp4"`, cam.Config.ID))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(clipBytes)))
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(clipBytes)
 }

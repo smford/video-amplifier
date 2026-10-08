@@ -212,6 +212,8 @@ func (s *HTTPServer) handleCameraRoute(w http.ResponseWriter, r *http.Request) {
 		}
 	case "fmp4", "live.mp4":
 		s.fmp4.HandleFMP4Stream(w, r, cam)
+	case "clip.mp4", "clip", "preroll.mp4":
+		s.fmp4.HandleDVRClip(w, r, cam)
 	case "ws", "fmp4.ws":
 		s.fmp4.HandleWebSocketStream(w, r, cam)
 	case "onvif", "device_service":
@@ -297,6 +299,9 @@ func (s *HTTPServer) handleCatchAll(w http.ResponseWriter, r *http.Request) {
 			case "fmp4", "live.mp4":
 				s.fmp4.HandleFMP4Stream(w, r, cam)
 				return
+			case "clip.mp4", "clip", "preroll.mp4":
+				s.fmp4.HandleDVRClip(w, r, cam)
+				return
 			case "ws", "fmp4.ws":
 				s.fmp4.HandleWebSocketStream(w, r, cam)
 				return
@@ -319,7 +324,7 @@ func mapHTTPActionToStreamAction(action string) config.StreamAction {
 		return config.ActionMJPEG
 	case "whep":
 		return config.ActionWHEP
-	case "fmp4", "live.mp4", "ws", "fmp4.ws":
+	case "fmp4", "live.mp4", "clip.mp4", "clip", "preroll.mp4", "ws", "fmp4.ws":
 		return config.ActionFMP4
 	case "onvif", "device_service":
 		return config.ActionONVIF

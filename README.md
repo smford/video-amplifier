@@ -198,11 +198,13 @@ users:
 | `POST` | `/cameras/{id}/whep` | **WHEP (WebRTC HTTP Egress)**: Standard SDP offer exchange for ultra-low latency browser playback |
 | `DELETE` | `/cameras/{id}/whep/{session}` | Terminate active WHEP WebRTC session |
 | `GET` | `/cameras/{id}/fmp4`, `/live.mp4` | **Fragmented MP4**: Chunked transfer stream (`video/mp4`) for MSE and browser `<video>` |
+| `GET` | `/cameras/{id}/clip.mp4` | **Instant DVR Clip / Pre-Roll**: Standalone downloadable MP4 containing the last 20–30s of video |
 | `GET` | `/cameras/{id}/ws` | **fMP4 over WebSockets**: Low-overhead binary stream for WebSocket-based players |
 | `GET`, `POST` | `/cameras/{id}/onvif` | **ONVIF Metadata & Profiles**: Decoupled ONVIF capabilities and profile cache (`application/soap+xml`) |
 | `GET` | `/{id}/mjpeg` | Short alias for MJPEG stream |
 | `GET` | `/{id}/snapshot.jpg` | Short alias for snapshot |
 | `GET` | `/{id}/fmp4` | Short alias for fMP4 stream |
+| `GET` | `/{id}/clip.mp4` | Short alias for DVR clip |
 | `GET` | `/{id}/whep` | Short alias for WHEP endpoint |
 | `GET` | `/{id}/onvif` | Short alias for ONVIF endpoint |
 | `GET` | `/cameras` | JSON list of configured cameras and live metrics |

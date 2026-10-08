@@ -367,6 +367,14 @@ func TestHTTPServer_WHEPAndFMP4Routes(t *testing.T) {
 	if fmp4W.Header().Get("Content-Type") != "video/mp4" {
 		t.Fatalf("expected video/mp4 Content-Type, got %s", fmp4W.Header().Get("Content-Type"))
 	}
+
+	// Test DVR clip endpoint when no packets are buffered yet -> 503
+	clipReq := httptest.NewRequest(http.MethodGet, "/cameras/stream-cam/clip.mp4", nil)
+	clipW := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(clipW, clipReq)
+	if clipW.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when no DVR packets are buffered, got %d", clipW.Code)
+	}
 }
 
 func TestHTTPServer_JSONHealthzAndONVIF(t *testing.T) {

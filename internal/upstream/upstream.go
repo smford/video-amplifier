@@ -78,6 +78,9 @@ type CameraStream struct {
 	onvifCapabilities []byte
 	onvifProfiles     []byte
 
+	// Rolling circular buffer for instant replay and pre-roll clip retrieval
+	dvrBuffer *ringbuffer.RingBuffer[*rtp.Packet]
+
 	// Concrete driver (RTSP or MJPEG)
 	driver Driver
 }
@@ -105,6 +108,11 @@ func NewCameraStream(cfg config.CameraConfig, m *metrics.Metrics, logger *slog.L
 		cbConfig.BaseDelay = cfg.RetryInterval.Duration()
 	}
 
+	dvrCap := cfg.ClientBufferSize * 10
+	if dvrCap < 600 {
+		dvrCap = 600 // Holds ~20-30s of 30fps video packets
+	}
+
 	cs := &CameraStream{
 		Config:       cfg,
 		metrics:      m,
@@ -114,6 +122,7 @@ func NewCameraStream(cfg config.CameraConfig, m *metrics.Metrics, logger *slog.L
 		mjpegClients: make(map[string]*ringbuffer.RingBuffer[[]byte]),
 		rtpClients:   make(map[string]*ringbuffer.RingBuffer[*rtp.Packet]),
 		sharedRing:   ringbuffer.NewSharedRingBuffer(cfg.ClientBufferSize * 4),
+		dvrBuffer:    ringbuffer.NewRingBuffer[*rtp.Packet](dvrCap, 0),
 	}
 
 	return cs
@@ -397,6 +406,11 @@ func (cs *CameraStream) BroadcastRTPPacket(pkt *rtp.Packet) {
 		cs.sharedRing.WritePacket(pkt)
 	}
 
+	// Push to DVR circular buffer for instant replay clips
+	if cs.dvrBuffer != nil {
+		cs.dvrBuffer.Push(pkt)
+	}
+
 	cs.activeClientsMu.RLock()
 	defer cs.activeClientsMu.RUnlock()
 
@@ -407,6 +421,14 @@ func (cs *CameraStream) BroadcastRTPPacket(pkt *rtp.Packet) {
 			}
 		}
 	}
+}
+
+// DVRClipPackets returns a snapshot slice of the most recent RTP packets stored in the DVR circular buffer.
+func (cs *CameraStream) DVRClipPackets() []*rtp.Packet {
+	if cs.dvrBuffer == nil {
+		return nil
+	}
+	return cs.dvrBuffer.Snapshot()
 }
 
 // SetResolution records the detected video stream resolution (e.g. "1920x1080").

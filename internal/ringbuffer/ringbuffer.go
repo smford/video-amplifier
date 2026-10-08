@@ -159,6 +159,23 @@ func (rb *RingBuffer[T]) DroppedCount() uint64 {
 	return rb.droppedCount
 }
 
+// Snapshot returns a shallow copy of all currently buffered items in FIFO order.
+func (rb *RingBuffer[T]) Snapshot() []T {
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	if rb.count == 0 {
+		return nil
+	}
+
+	result := make([]T, rb.count)
+	for i := 0; i < rb.count; i++ {
+		idx := (rb.head + i) % rb.capacity
+		result[i] = rb.items[idx]
+	}
+	return result
+}
+
 // Len returns the current number of queued items.
 func (rb *RingBuffer[T]) Len() int {
 	rb.mu.Lock()
