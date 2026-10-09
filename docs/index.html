@@ -42,12 +42,56 @@
       background-attachment: fixed;
     }
 
+    /* Top Announcement Banner */
+    .top-banner {
+      background: linear-gradient(90deg, rgba(30, 58, 138, 0.9) 0%, rgba(15, 23, 42, 0.95) 50%, rgba(56, 189, 248, 0.2) 100%);
+      border-bottom: 1px solid rgba(56, 189, 248, 0.25);
+      padding: 0.5rem 1.5rem;
+      font-size: 0.875rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 0.75rem;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 60;
+      backdrop-filter: blur(10px);
+    }
+
+    .top-banner .release-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: rgba(56, 189, 248, 0.2);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: #7dd3fc;
+      padding: 0.15rem 0.6rem;
+      border-radius: 9999px;
+      font-weight: 700;
+      font-size: 0.75rem;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .top-banner a {
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      transition: color 0.2s ease;
+    }
+
+    .top-banner a:hover {
+      color: #fff;
+    }
+
     /* Header & Navigation */
     header {
       position: sticky;
-      top: 0;
+      top: 37px;
       z-index: 50;
-      background: rgba(10, 14, 23, 0.8);
+      background: rgba(10, 14, 23, 0.85);
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border-color);
@@ -378,6 +422,98 @@
     .term-cmd { color: #38bdf8; font-weight: 600; }
     .term-arg { color: #f1f5f9; }
 
+    /* Installation Section & Tabs */
+    .install-section {
+      max-width: 1100px;
+      margin: 0 auto 5rem;
+      padding: 0 1.5rem;
+    }
+
+    .install-tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      overflow-x: auto;
+      padding-bottom: 0.5rem;
+      scrollbar-width: thin;
+    }
+
+    .tab-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border-color);
+      color: var(--text-muted);
+      padding: 0.6rem 1.1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+
+    .tab-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+    }
+
+    .tab-btn.active {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--accent);
+      color: #7dd3fc;
+    }
+
+    .install-tab-content {
+      display: none;
+    }
+
+    .install-tab-content.active {
+      display: block;
+    }
+
+    .package-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+      margin-top: 2rem;
+    }
+
+    .package-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 1.25rem;
+    }
+
+    .package-card h4 {
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--text-main);
+    }
+
+    .package-card p {
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .package-card code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      display: block;
+      background: var(--code-bg);
+      padding: 0.5rem 0.75rem;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      color: #cbd5e1;
+      word-break: break-all;
+    }
+
     /* Endpoints Reference Table */
     .table-container {
       max-width: 1100px;
@@ -446,6 +582,14 @@
 </head>
 <body>
 
+  <!-- Top Release Banner -->
+  <div class="top-banner" id="top-banner">
+    <span class="release-tag">Latest Release</span>
+    <span id="release-version-text"><strong>v1.0.0</strong> is now live!</span>
+    <span style="color: rgba(255,255,255,0.3);">&bull;</span>
+    <a href="https://github.com/smford/video-amplifier/releases/latest" id="release-link" target="_blank">View Release Notes &amp; Binaries &rarr;</a>
+  </div>
+
   <header>
     <a href="#" class="brand">
       <svg class="brand-icon" viewBox="0 0 24 24">
@@ -456,6 +600,7 @@
     <nav>
       <a href="#features">Features</a>
       <a href="#architecture">Architecture</a>
+      <a href="#installation">Install</a>
       <a href="#quickstart">Quickstart</a>
       <a href="#endpoints">Endpoints</a>
       <a href="https://github.com/smford/video-amplifier" target="_blank" class="btn-github">
@@ -572,6 +717,189 @@
       </div>
     </section>
 
+    <!-- Installation & Packages Section -->
+    <section class="install-section" id="installation">
+      <div class="section-title">
+        <h2>Installation &amp; Packages</h2>
+        <p>Pre-compiled standalone binaries and native packages available for every major platform and distribution.</p>
+      </div>
+
+      <div class="install-tabs" role="tablist">
+        <button class="tab-btn active" onclick="switchTab('tab-brew')">🍺 Homebrew (macOS &amp; Linux)</button>
+        <button class="tab-btn" onclick="switchTab('tab-deb')">🐧 Debian / Ubuntu / Mint / Pi</button>
+        <button class="tab-btn" onclick="switchTab('tab-rpm')">🎩 RHEL / CentOS / Fedora</button>
+        <button class="tab-btn" onclick="switchTab('tab-arch')">🏹 Arch Linux</button>
+        <button class="tab-btn" onclick="switchTab('tab-windows')">🪟 Windows</button>
+        <button class="tab-btn" onclick="switchTab('tab-docker')">🐳 Docker</button>
+      </div>
+
+      <!-- Tab 1: Homebrew -->
+      <div id="tab-brew" class="install-tab-content active">
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="term-dot term-red"></div>
+            <div class="term-dot term-yellow"></div>
+            <div class="term-dot term-green"></div>
+            <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#64748b; margin-left:0.5rem;">homebrew &bull; macOS &amp; Linux</span>
+          </div>
+          <div class="terminal-body">
+            <pre><code><span class="term-comment"># Install via official Homebrew tap</span>
+<span class="term-cmd">brew tap</span> <span class="term-arg">smford/tap</span>
+<span class="term-cmd">brew install</span> <span class="term-arg">video-amplifier</span>
+
+<span class="term-comment"># Verify installation</span>
+<span class="term-cmd">video-amplifier</span> <span class="term-arg">-h</span></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: Debian / Ubuntu / Mint / Raspberry Pi -->
+      <div id="tab-deb" class="install-tab-content">
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="term-dot term-red"></div>
+            <div class="term-dot term-yellow"></div>
+            <div class="term-dot term-green"></div>
+            <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#64748b; margin-left:0.5rem;">apt / dpkg &bull; Debian, Ubuntu, Linux Mint &amp; Raspberry Pi OS</span>
+          </div>
+          <div class="terminal-body">
+            <pre><code><span class="term-comment"># x86_64 / amd64 (Ubuntu, Debian, Linux Mint)</span>
+<span class="term-cmd">curl -LO</span> <span class="term-arg">https://github.com/smford/video-amplifier/releases/latest/download/video-amplifier_1.0.0_linux_amd64.deb</span>
+<span class="term-cmd">sudo dpkg -i</span> <span class="term-arg">video-amplifier_1.0.0_linux_amd64.deb</span>
+
+<span class="term-comment"># ARM64 / aarch64 (Raspberry Pi 4/5 64-bit, Ubuntu ARM)</span>
+<span class="term-cmd">curl -LO</span> <span class="term-arg">https://github.com/smford/video-amplifier/releases/latest/download/video-amplifier_1.0.0_linux_arm64.deb</span>
+<span class="term-cmd">sudo dpkg -i</span> <span class="term-arg">video-amplifier_1.0.0_linux_arm64.deb</span>
+
+<span class="term-comment"># ARMv7 / 32-bit (Raspberry Pi 2/3/Zero 2W 32-bit)</span>
+<span class="term-cmd">curl -LO</span> <span class="term-arg">https://github.com/smford/video-amplifier/releases/latest/download/video-amplifier_1.0.0_linux_armv7.deb</span>
+<span class="term-cmd">sudo dpkg -i</span> <span class="term-arg">video-amplifier_1.0.0_linux_armv7.deb</span></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 3: RHEL / CentOS / Fedora -->
+      <div id="tab-rpm" class="install-tab-content">
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="term-dot term-red"></div>
+            <div class="term-dot term-yellow"></div>
+            <div class="term-dot term-green"></div>
+            <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#64748b; margin-left:0.5rem;">rpm / dnf / yum &bull; RHEL, CentOS, Rocky Linux, Fedora</span>
+          </div>
+          <div class="terminal-body">
+            <pre><code><span class="term-comment"># x86_64 / amd64</span>
+<span class="term-cmd">sudo dnf install</span> <span class="term-arg">https://github.com/smford/video-amplifier/releases/latest/download/video-amplifier_1.0.0_linux_amd64.rpm</span>
+
+<span class="term-comment"># On CentOS 7 / legacy yum</span>
+<span class="term-cmd">sudo rpm -Uvh</span> <span class="term-arg">https://github.com/smford/video-amplifier/releases/latest/download/video-amplifier_1.0.0_linux_amd64.rpm</span>
+
+<span class="term-comment"># ARM64 (Rocky / Alma / Fedora aarch64)</span>
+<span class="term-cmd">sudo dnf install</span> <span class="term-arg">https://github.com/smford/video-amplifier/releases/latest/download/video-amplifier_1.0.0_linux_arm64.rpm</span></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 4: Arch Linux -->
+      <div id="tab-arch" class="install-tab-content">
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="term-dot term-red"></div>
+            <div class="term-dot term-yellow"></div>
+            <div class="term-dot term-green"></div>
+            <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#64748b; margin-left:0.5rem;">pacman &bull; Arch Linux &amp; Manjaro</span>
+          </div>
+          <div class="terminal-body">
+            <pre><code><span class="term-comment"># Download native Pacman package (.pkg.tar.zst)</span>
+<span class="term-cmd">curl -LO</span> <span class="term-arg">https://github.com/smford/video-amplifier/releases/latest/download/video-amplifier_1.0.0_linux_amd64.pkg.tar.zst</span>
+
+<span class="term-comment"># Install via pacman</span>
+<span class="term-cmd">sudo pacman -U</span> <span class="term-arg">video-amplifier_1.0.0_linux_amd64.pkg.tar.zst</span></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 5: Windows -->
+      <div id="tab-windows" class="install-tab-content">
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="term-dot term-red"></div>
+            <div class="term-dot term-yellow"></div>
+            <div class="term-dot term-green"></div>
+            <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#64748b; margin-left:0.5rem;">powershell &bull; Windows 10 / 11 / Server (x86_64 &amp; arm64)</span>
+          </div>
+          <div class="terminal-body">
+            <pre><code><span class="term-comment"># Download standalone Windows 64-bit release (.zip)</span>
+<span class="term-cmd">Invoke-WebRequest</span> <span class="term-arg">-Uri "https://github.com/smford/video-amplifier/releases/latest/download/video-amplifier_1.0.0_windows_amd64.zip" -OutFile "video-amplifier.zip"</span>
+
+<span class="term-comment"># Extract archive</span>
+<span class="term-cmd">Expand-Archive</span> <span class="term-arg">video-amplifier.zip -DestinationPath C:\video-amplifier</span>
+
+<span class="term-comment"># Run binary directly (no dependencies required)</span>
+<span class="term-cmd">cd</span> <span class="term-arg">C:\video-amplifier</span>
+<span class="term-cmd">.\video-amplifier.exe</span> <span class="term-arg">-h</span></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 6: Docker -->
+      <div id="tab-docker" class="install-tab-content">
+        <div class="terminal-window">
+          <div class="terminal-header">
+            <div class="term-dot term-red"></div>
+            <div class="term-dot term-yellow"></div>
+            <div class="term-dot term-green"></div>
+            <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#64748b; margin-left:0.5rem;">docker &bull; multi-arch container image</span>
+          </div>
+          <div class="terminal-body">
+            <pre><code><span class="term-comment"># Pull container from GitHub Container Registry</span>
+<span class="term-cmd">docker pull</span> <span class="term-arg">ghcr.io/smford/video-amplifier:latest</span>
+
+<span class="term-comment"># Run with local config mounted</span>
+<span class="term-cmd">docker run -d</span> <span class="term-arg">--name video-amplifier \
+  --restart unless-stopped \
+  -p 8080:8080 -p 8554:8554 -p 9090:9090 \
+  -v $(pwd)/config.yaml:/etc/video-amplifier/config.yaml:ro \
+  ghcr.io/smford/video-amplifier:latest</span></code></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- Package Matrix Summary -->
+      <div class="package-grid">
+        <div class="package-card">
+          <h4>🍏 macOS</h4>
+          <p>Apple Silicon (ARM64) &amp; Intel (x86_64)</p>
+          <code>brew install video-amplifier</code>
+        </div>
+        <div class="package-card">
+          <h4>🐧 Debian / Ubuntu / Mint</h4>
+          <p>Debian <code>.deb</code> package (amd64, arm64, armv7)</p>
+          <code>sudo dpkg -i video-amplifier_*.deb</code>
+        </div>
+        <div class="package-card">
+          <h4>🎩 Red Hat / CentOS / Fedora</h4>
+          <p>Red Hat <code>.rpm</code> package (amd64, arm64, armv7)</p>
+          <code>sudo dnf install video-amplifier_*.rpm</code>
+        </div>
+        <div class="package-card">
+          <h4>🏹 Arch Linux / Manjaro</h4>
+          <p>Native Pacman <code>.pkg.tar.zst</code> archive</p>
+          <code>sudo pacman -U video-amplifier_*.pkg.tar.zst</code>
+        </div>
+        <div class="package-card">
+          <h4>🍓 Raspberry Pi</h4>
+          <p>Raspberry Pi OS 32-bit &amp; 64-bit packages</p>
+          <code>sudo dpkg -i video-amplifier_*_arm64.deb</code>
+        </div>
+        <div class="package-card">
+          <h4>🪟 Windows</h4>
+          <p>Native Windows static binary (amd64 &amp; arm64)</p>
+          <code>video-amplifier.exe</code>
+        </div>
+      </div>
+    </section>
+
     <!-- Quickstart Section -->
     <section class="quickstart-section" id="quickstart">
       <div class="section-title">
@@ -676,12 +1004,53 @@
 
   <footer>
     <p>
-      Released under the <a href="https://github.com/smford/video-amplifier/blob/main/LICENSE" target="_blank">MIT License</a> &bull; Designed for 24/7 high-reliability camera operations.
+      Released under the <a href="https://github.com/smford/video-amplifier/blob/main/LICENSE" target="_blank">GNU Affero General Public License v3.0 (AGPLv3)</a> &bull; Designed for 24/7 high-reliability camera operations.
     </p>
     <p style="margin-top: 0.5rem;">
       <a href="https://github.com/smford/video-amplifier" target="_blank">github.com/smford/video-amplifier</a>
     </p>
   </footer>
+
+  <script>
+    // Tab switching functionality
+    function switchTab(tabId) {
+      document.querySelectorAll('.install-tab-content').forEach(function(el) {
+        el.classList.remove('active');
+      });
+      document.querySelectorAll('.tab-btn').forEach(function(btn) {
+        btn.classList.remove('active');
+      });
+      const selected = document.getElementById(tabId);
+      if (selected) {
+        selected.classList.add('active');
+      }
+      if (event && event.currentTarget) {
+        event.currentTarget.classList.add('active');
+      }
+    }
+
+    // Dynamic Latest Release fetcher with fallback
+    (async function fetchLatestRelease() {
+      try {
+        const response = await fetch('https://api.github.com/repos/smford/video-amplifier/releases/latest');
+        if (response.ok) {
+          const data = await response.json();
+          const tagName = data.tag_name || 'v1.0.0';
+          const textEl = document.getElementById('release-version-text');
+          const linkEl = document.getElementById('release-link');
+          if (textEl) {
+            textEl.innerHTML = `<strong>${tagName}</strong> is now live!`;
+          }
+          if (linkEl && data.html_url) {
+            linkEl.href = data.html_url;
+          }
+        }
+      } catch (err) {
+        // Fallback gracefully to default static v1.0.0
+        console.debug('Using fallback release version', err);
+      }
+    })();
+  </script>
 
 </body>
 </html>

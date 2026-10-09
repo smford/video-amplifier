@@ -1,7 +1,7 @@
 # video-amplifier
 
 [![Go Version](https://img.shields.io/badge/Go-1.23%2B-00ADD8?logo=go)](https://go.dev/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Zero CGO](https://img.shields.io/badge/CGO-zero-brightgreen)](#tech-stack--architecture)
 [![Prometheus](https://img.shields.io/badge/metrics-Prometheus-E6522C?logo=prometheus)](/metrics)
 [![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-38bdf8?logo=githubpages&logoColor=white)](https://smford.github.io/video-amplifier/)
@@ -382,4 +382,4 @@ file /tmp/snapshot.jpg
 
 ## License
 
-MIT License. Designed for 24/7 high-reliability camera operations.
+GNU Affero General Public License v3.0 (AGPLv3). Designed for 24/7 high-reliability camera operations.

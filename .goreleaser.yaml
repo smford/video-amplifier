@@ -62,7 +62,7 @@ nfpms:
     homepage: https://github.com/smford/video-amplifier
     maintainer: "Simon Ford <https://github.com/smford>"
     description: "High-performance streaming proxy for IP cameras with zero-transcode fan-out"
-    license: MIT
+    license: "AGPL-3.0"
     formats:
       - deb
       - rpm

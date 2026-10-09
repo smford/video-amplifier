@@ -76,7 +76,7 @@ class VideoAmplifier < Formula
   desc "High-performance streaming proxy for IP cameras with zero-transcode fan-out"
   homepage "https://github.com/smford/video-amplifier"
   version "${VERSION}"
-  license "MIT"
+  license "AGPL-3.0-or-later"
 
   on_macos do
     on_arm do
