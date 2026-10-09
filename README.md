@@ -4,6 +4,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Zero CGO](https://img.shields.io/badge/CGO-zero-brightgreen)](#tech-stack--architecture)
 [![Prometheus](https://img.shields.io/badge/metrics-Prometheus-E6522C?logo=prometheus)](/metrics)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-38bdf8?logo=githubpages&logoColor=white)](https://smford.github.io/video-amplifier/)
 
 A high-performance, production-grade IP camera streaming proxy designed by Staff Software and Principal Site Reliability Engineers.
 

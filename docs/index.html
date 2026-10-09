@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>video-amplifier &bull; High-Performance Streaming Proxy for IP Cameras</title>
+  <meta name="description" content="Single-tenant upstream streaming proxy for IP cameras. Zero transcode fan-out, WebRTC (WHEP), RTSP relay, circuit breaking, and sub-millisecond backpressure protection.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0a0e17;
+      --bg-card: rgba(18, 24, 38, 0.7);
+      --bg-card-hover: rgba(26, 34, 54, 0.85);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(56, 189, 248, 0.3);
+      --accent: #38bdf8;
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      --accent-purple: #818cf8;
+      --accent-green: #34d399;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --code-bg: #0f172a;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      line-height: 1.6;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(56, 189, 248, 0.08) 0%, transparent 40%),
+        radial-gradient(circle at 85% 65%, rgba(129, 140, 248, 0.07) 0%, transparent 40%);
+      background-attachment: fixed;
+    }
+
+    /* Header & Navigation */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(10, 14, 23, 0.8);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text-main);
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      fill: var(--accent);
+      filter: drop-shadow(0 0 8px var(--accent-glow));
+    }
+
+    nav {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    nav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9375rem;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    nav a:hover {
+      color: var(--accent);
+    }
+
+    .btn-github {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-main);
+      font-size: 0.875rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .btn-github:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    /* Hero Section */
+    .hero {
+      max-width: 1200px;
+      margin: 4rem auto 3rem;
+      padding: 0 1.5rem;
+      text-align: center;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.85rem;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 9999px;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 1.5rem;
+    }
+
+    .hero h1 {
+      font-size: clamp(2.5rem, 5vw, 4.25rem);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      margin-bottom: 1.25rem;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: clamp(1.0625rem, 2vw, 1.25rem);
+      color: var(--text-muted);
+      max-width: 800px;
+      margin: 0 auto 2.25rem;
+    }
+
+    .hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 3.5rem;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #090d16;
+      padding: 0.8rem 1.75rem;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 1rem;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      box-shadow: 0 0 25px var(--accent-glow);
+    }
+
+    .btn-primary:hover {
+      background: #7dd3fc;
+      transform: translateY(-2px);
+      box-shadow: 0 0 35px rgba(56, 189, 248, 0.4);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text-main);
+      padding: 0.8rem 1.75rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      text-decoration: none;
+      border: 1px solid var(--border-color);
+      transition: all 0.2s ease;
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Architecture Visualizer Card */
+    .arch-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2.25rem;
+      max-width: 1100px;
+      margin: 0 auto 5rem;
+      backdrop-filter: blur(16px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .arch-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1.5fr;
+      align-items: center;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 868px) {
+      .arch-grid {
+        grid-template-columns: 1fr;
+        text-align: center;
+      }
+    }
+
+    .arch-box {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    .arch-box h3 {
+      font-size: 1.1rem;
+      margin-bottom: 0.75rem;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .arch-box ul {
+      list-style: none;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .arch-box ul li {
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .arrow-divider {
+      color: var(--accent);
+      font-size: 1.75rem;
+      font-weight: 800;
+    }
+
+    /* Features Grid */
+    .section-title {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .section-title h2 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-title p {
+      color: var(--text-muted);
+      font-size: 1.0625rem;
+      max-width: 650px;
+      margin: 0 auto;
+    }
+
+    .features-grid {
+      max-width: 1200px;
+      margin: 0 auto 5rem;
+      padding: 0 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 2rem;
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--border-accent);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: rgba(56, 189, 248, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+      color: var(--accent);
+      font-size: 1.25rem;
+    }
+
+    .feature-card h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 0.9375rem;
+      line-height: 1.6;
+    }
+
+    /* Terminal & Quickstart */
+    .quickstart-section {
+      max-width: 1000px;
+      margin: 0 auto 5rem;
+      padding: 0 1.5rem;
+    }
+
+    .terminal-window {
+      background: var(--code-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+    }
+
+    .terminal-header {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .term-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+    }
+    .term-red { background: #ef4444; }
+    .term-yellow { background: #f59e0b; }
+    .term-green { background: #10b981; }
+
+    .terminal-body {
+      padding: 1.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9375rem;
+      color: #cbd5e1;
+      overflow-x: auto;
+    }
+
+    .terminal-body pre {
+      line-height: 1.7;
+    }
+
+    .term-comment { color: #64748b; }
+    .term-cmd { color: #38bdf8; font-weight: 600; }
+    .term-arg { color: #f1f5f9; }
+
+    /* Endpoints Reference Table */
+    .table-container {
+      max-width: 1100px;
+      margin: 0 auto 5rem;
+      padding: 0 1.5rem;
+    }
+
+    .endpoints-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .endpoints-table th, 
+    .endpoints-table td {
+      padding: 1rem 1.25rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      font-size: 0.9375rem;
+    }
+
+    .endpoints-table th {
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text-main);
+      font-weight: 700;
+    }
+
+    .endpoints-table td code {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--accent);
+      background: rgba(56, 189, 248, 0.08);
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+
+    .badge-method {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .method-get { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+    .method-post { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-color);
+      background: rgba(10, 14, 23, 0.95);
+      padding: 3rem 1.5rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.875rem;
+    }
+
+    footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="#" class="brand">
+      <svg class="brand-icon" viewBox="0 0 24 24">
+        <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4zM14 13h-3v3H9v-3H6v-2h3V8h2v3h3v2z"/>
+      </svg>
+      video-amplifier
+    </a>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#endpoints">Endpoints</a>
+      <a href="https://github.com/smford/video-amplifier" target="_blank" class="btn-github">
+        <svg width="18" height="18" fill="currentColor" viewBox="0 0 24 24">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+        </svg>
+        GitHub
+      </a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="badge-pill">
+        <span>⚡ Pure Go &bull; Zero Transcode &bull; Zero CGO</span>
+      </div>
+      <h1>High-Performance Streaming Proxy for Fragile IP Cameras</h1>
+      <p>
+        Isolate weak IP camera SoCs behind a single persistent upstream session. Fan out unlimited downstream consumers across WebRTC (WHEP), RTSP, MJPEG, and fMP4 with circuit breaking and sub-millisecond backpressure protection.
+      </p>
+      <div class="hero-actions">
+        <a href="#quickstart" class="btn-primary">Get Started</a>
+        <a href="https://github.com/smford/video-amplifier" target="_blank" class="btn-secondary">View on GitHub</a>
+      </div>
+
+      <!-- Architecture Visualizer -->
+      <div class="arch-card" id="architecture">
+        <div class="arch-grid">
+          <div class="arch-box">
+            <h3>📷 Fragile IP Camera</h3>
+            <ul>
+              <li>🔒 Exactly 1 Upstream Connection</li>
+              <li>🛡️ Circuit Breaker Protected</li>
+              <li>⏱️ Exponential Backoff + Jitter</li>
+              <li>⚡ RTSP / H.264 / H.265 / MJPEG</li>
+            </ul>
+          </div>
+          <div class="arrow-divider">&xrarr;</div>
+          <div class="arch-box" style="border-color: var(--border-accent); background: rgba(56, 189, 248, 0.05);">
+            <h3>🚀 video-amplifier Engine</h3>
+            <ul>
+              <li><strong>Zero-Copy Shared Ring Buffer:</strong> Multi-reader circular packet pipeline</li>
+              <li><strong>GOP Eviction:</strong> Drops P/B frames for slow consumers, prevents video artifacts</li>
+              <li><strong>Synthetic Keep-Alives:</strong> 1fps keep-alive streams keep NVRs connected during drops</li>
+              <li><strong>Role-Based Access Control:</strong> Downstream RBAC by stream type & camera</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features-section" id="features">
+      <div class="section-title">
+        <h2>Engineered for 24/7 Production Reliability</h2>
+        <p>Built from the ground up for high-availability home automation, commercial NVRs, and air-gapped security networks.</p>
+      </div>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">⚡</div>
+          <h3>Zero Transcode Fan-Out</h3>
+          <p>Multiplexes pure RTP packets and JPEG frames directly from upstream without CPU-heavy software re-encoding, preserving native video quality and microsecond latency.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🌐</div>
+          <h3>Native WebRTC (WHEP) Egress</h3>
+          <p>Standard WHEP HTTP SDP offer exchange enables sub-second (50-150ms) hardware-accelerated video playback directly in modern desktop and mobile browsers.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔄</div>
+          <h3>Synthetic Keep-Alives</h3>
+          <p>Maintains active downstream NVR sessions (Frigate, Blue Iris, Home Assistant) during transient camera reboots or Wi-Fi dropouts by injecting synthetic keep-alives.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🛡️</div>
+          <h3>GOP-Aware Backpressure Eviction</h3>
+          <p>Isolates slow viewers on poor wireless links. Drops non-reference frames dynamically before triggering clean keyframe resynchronization, eliminating video tearing.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔒</div>
+          <h3>Granular RBAC Security</h3>
+          <p>Configure declarative users with scoped permissions by camera and action (snapshot, mjpeg, rtsp, whep, fmp4). Clean 401/403 status codes prevent browser login loops.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">🔍</div>
+          <h3>ONVIF WS-Discovery Scanner</h3>
+          <p>Built-in multicast probe command (<code>video-amplifier scan</code>) auto-detects ONVIF IP cameras on your local subnet and reveals their RTSP streaming endpoints.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">⏪</div>
+          <h3>Instant Pre-Roll DVR Clips</h3>
+          <p>Maintains a rolling in-memory 20-30s circular GOP buffer. Instantly download standalone MP4 pre-roll clips (<code>/cameras/{id}/clip.mp4</code>) when motion events trigger.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📊</div>
+          <h3>Prometheus & Grafana Ready</h3>
+          <p>Exports detailed telemetry on port <code>:9090</code> (bitrate, fps, consumer lag, drops). Comes with a pre-configured Grafana dashboard and Docker Compose stack.</p>
+        </div>
+
+        <div class="feature-card">
+          <div class="feature-icon">📱</div>
+          <h3>Self-Contained Dashboard UI</h3>
+          <p>Zero-dependency, air-gapped web interface featuring live video feeds, one-click copyable stream URL chips, and live connection telemetry.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quickstart Section -->
+    <section class="quickstart-section" id="quickstart">
+      <div class="section-title">
+        <h2>Quickstart in Under 60 Seconds</h2>
+        <p>Run locally as a single static binary or deploy using the official Docker container.</p>
+      </div>
+
+      <div class="terminal-window">
+        <div class="terminal-header">
+          <div class="term-dot term-red"></div>
+          <div class="term-dot term-yellow"></div>
+          <div class="term-dot term-green"></div>
+          <span style="font-family:'JetBrains Mono'; font-size:0.8rem; color:#64748b; margin-left:0.5rem;">bash &bull; install & run</span>
+        </div>
+        <div class="terminal-body">
+          <pre><code><span class="term-comment"># 1. Clone and compile with pure Go</span>
+<span class="term-cmd">git clone</span> <span class="term-arg">https://github.com/smford/video-amplifier.git</span>
+<span class="term-cmd">cd</span> <span class="term-arg">video-amplifier</span>
+<span class="term-cmd">make build</span>
+
+<span class="term-comment"># 2. Discover ONVIF IP cameras on your local network</span>
+<span class="term-cmd">./video-amplifier scan</span>
+
+<span class="term-comment"># 3. Generate a production-ready starter configuration</span>
+<span class="term-cmd">./video-amplifier init</span>
+
+<span class="term-comment"># 4. Start the proxy</span>
+<span class="term-cmd">./video-amplifier -config</span> <span class="term-arg">config.yaml</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Endpoints Reference Table -->
+    <section class="table-container" id="endpoints">
+      <div class="section-title">
+        <h2>Downstream Protocol Endpoints</h2>
+        <p>A unified endpoint interface for browsers, media players, and NVRs.</p>
+      </div>
+
+      <table class="endpoints-table">
+        <thead>
+          <tr>
+            <th>Protocol</th>
+            <th>Method</th>
+            <th>Path</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Web Dashboard</strong></td>
+            <td><span class="badge-method method-get">GET</span></td>
+            <td><code>/</code>, <code>/ui</code>, <code>/dashboard</code></td>
+            <td>Responsive dark-mode live multi-camera monitoring UI</td>
+          </tr>
+          <tr>
+            <td><strong>WebRTC</strong></td>
+            <td><span class="badge-method method-post">POST</span></td>
+            <td><code>/cameras/{id}/whep</code></td>
+            <td>Standard WHEP SDP exchange for ultra-low latency browser playback</td>
+          </tr>
+          <tr>
+            <td><strong>RTSP Relay</strong></td>
+            <td><span class="badge-method method-get">DESCRIBE/PLAY</span></td>
+            <td><code>rtsp://&lt;host&gt;:8554/{id}</code></td>
+            <td>Zero-copy RTSP stream with timed ONVIF XML metadata forwarding</td>
+          </tr>
+          <tr>
+            <td><strong>MJPEG</strong></td>
+            <td><span class="badge-method method-get">GET</span></td>
+            <td><code>/cameras/{id}/mjpeg</code></td>
+            <td>Multipart HTTP MJPEG stream (<code>multipart/x-mixed-replace</code>)</td>
+          </tr>
+          <tr>
+            <td><strong>Snapshot</strong></td>
+            <td><span class="badge-method method-get">GET</span></td>
+            <td><code>/cameras/{id}/snapshot.jpg</code></td>
+            <td>Instant cached single JPEG frame</td>
+          </tr>
+          <tr>
+            <td><strong>fMP4 / MSE</strong></td>
+            <td><span class="badge-method method-get">GET</span></td>
+            <td><code>/cameras/{id}/fmp4</code></td>
+            <td>Fragmented MP4 stream for HTML5 <code>&lt;video&gt;</code> and MSE players</td>
+          </tr>
+          <tr>
+            <td><strong>DVR Pre-Roll</strong></td>
+            <td><span class="badge-method method-get">GET</span></td>
+            <td><code>/cameras/{id}/clip.mp4</code></td>
+            <td>Instant downloadable MP4 containing the last 20–30s of buffered video</td>
+          </tr>
+          <tr>
+            <td><strong>Prometheus</strong></td>
+            <td><span class="badge-method method-get">GET</span></td>
+            <td><code>:9090/metrics</code></td>
+            <td>Prometheus metrics scrape target (bitrate, fps, drops, lag)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      Released under the <a href="https://github.com/smford/video-amplifier/blob/main/LICENSE" target="_blank">MIT License</a> &bull; Designed for 24/7 high-reliability camera operations.
+    </p>
+    <p style="margin-top: 0.5rem;">
+      <a href="https://github.com/smford/video-amplifier" target="_blank">github.com/smford/video-amplifier</a>
+    </p>
+  </footer>
+
+</body>
+</html>
