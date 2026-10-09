@@ -15,9 +15,18 @@ builds:
     goos:
       - linux
       - darwin
+      - windows
     goarch:
       - amd64
       - arm64
+      - arm
+    goarm:
+      - 7 # Raspberry Pi 2/3/4/Zero 2 in 32-bit mode
+    ignore:
+      - goos: windows
+        goarch: arm
+      - goos: darwin
+        goarch: arm
     ldflags:
       - -s -w
       - -X main.Version={{.Version}}
@@ -28,13 +37,47 @@ archives:
   - id: default
     formats:
       - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
     name_template: >-
-      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}
     files:
       - LICENSE*
       - README*
       - config.example.yaml
+      - systemd/video-amplifier.service
       - docs/*
+
+# Native Linux packages:
+# - deb: Debian, Ubuntu, Linux Mint, Raspberry Pi OS
+# - rpm: Red Hat Enterprise Linux (RHEL), CentOS, Fedora, Rocky Linux, AlmaLinux
+# - apk: Alpine Linux
+# - archlinux: Arch Linux, Manjaro
+nfpms:
+  - id: video-amplifier-packages
+    package_name: video-amplifier
+    vendor: smford
+    homepage: https://github.com/smford/video-amplifier
+    maintainer: "Simon Ford <https://github.com/smford>"
+    description: "High-performance streaming proxy for IP cameras with zero-transcode fan-out"
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+      - archlinux
+    file_name_template: >-
+      {{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}
+    contents:
+      - src: config.example.yaml
+        dst: /etc/video-amplifier/config.yaml
+        type: config|noreplace
+      - src: systemd/video-amplifier.service
+        dst: /lib/systemd/system/video-amplifier.service
+    scripts:
+      postinstall: scripts/postinstall.sh
 
 dockers_v2:
   - id: video-amplifier

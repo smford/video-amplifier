@@ -229,15 +229,39 @@ users:
 
 ## Quickstart
 
-### Installation via Homebrew
+### Installation & Package Downloads
 
+Pre-built binaries and native packages for **Linux (Debian, Ubuntu, Mint, Raspberry Pi, Red Hat, CentOS, Arch)**, **macOS**, and **Windows** are automatically built and published on every release:
+
+#### macOS & Linux (Homebrew)
 ```bash
-# Add Homebrew tap and install video-amplifier
 brew tap smford/tap
 brew install video-amplifier
+```
 
-# Verify installation
-video-amplifier -version
+#### Debian / Ubuntu / Linux Mint / Raspberry Pi OS (`.deb`)
+```bash
+# Download and install the latest .deb for your architecture (amd64, arm64, armv7)
+sudo dpkg -i video-amplifier_*_linux_amd64.deb
+sudo systemctl enable --now video-amplifier
+```
+
+#### Red Hat / CentOS / Fedora / Rocky / AlmaLinux (`.rpm`)
+```bash
+# Download and install the latest .rpm for your architecture
+sudo rpm -ivh video-amplifier_*_linux_amd64.rpm
+sudo systemctl enable --now video-amplifier
+```
+
+#### Arch Linux / Manjaro (`.pkg.tar.zst`)
+```bash
+sudo pacman -U video-amplifier_*_linux_amd64.pkg.tar.zst
+```
+
+#### Windows (`.zip`)
+Download `video-amplifier_*_windows_amd64.zip` from [Releases](https://github.com/smford/video-amplifier/releases), extract `video-amplifier.exe`, and run:
+```powershell
+.\video-amplifier.exe -config config.yaml
 ```
 
 ### Building from Source
