@@ -8,6 +8,11 @@ on:
       - "docs/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version being published"
+        required: false
+        default: ""
 
 permissions:
   contents: read

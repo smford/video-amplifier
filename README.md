@@ -229,6 +229,17 @@ users:
 
 ## Quickstart
 
+### Installation via Homebrew
+
+```bash
+# Add Homebrew tap and install video-amplifier
+brew tap smford/tap
+brew install video-amplifier
+
+# Verify installation
+video-amplifier -version
+```
+
 ### Building from Source
 
 Prerequisites: Go 1.23+
