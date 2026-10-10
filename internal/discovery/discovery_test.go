@@ -45,6 +45,44 @@ func TestParseProbeMatch(t *testing.T) {
 	}
 }
 
+func TestParseMultipleProbeMatches(t *testing.T) {
+	multiXML := []byte(`<?xml version="1.0" encoding="utf-8"?>
+<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" xmlns:wsa="http://schemas.xmlsoap.org/ws/2004/08/addressing" xmlns="http://schemas.xmlsoap.org/ws/2005/04/discovery">
+  <soap:Body>
+    <ProbeMatches>
+      <ProbeMatch>
+        <EndpointReference>
+          <Address>urn:uuid:cam-001</Address>
+        </EndpointReference>
+        <Types>tds:Device</Types>
+        <Scopes>onvif://name/Cam1</Scopes>
+        <XAddrs>http://127.0.0.1:8000/onvif/cam0/device_service</XAddrs>
+      </ProbeMatch>
+      <ProbeMatch>
+        <EndpointReference>
+          <Address>urn:uuid:cam-002</Address>
+        </EndpointReference>
+        <Types>tds:Device</Types>
+        <Scopes>onvif://name/Cam2</Scopes>
+        <XAddrs>http://127.0.0.1:8000/onvif/cam1/device_service</XAddrs>
+      </ProbeMatch>
+    </ProbeMatches>
+  </soap:Body>
+</soap:Envelope>`)
+
+	devs, err := parseProbeMatches(multiXML, "127.0.0.1:3702")
+	if err != nil {
+		t.Fatalf("unexpected error parsing probe matches: %v", err)
+	}
+
+	if len(devs) != 2 {
+		t.Fatalf("expected 2 devices, got %d", len(devs))
+	}
+	if devs[0].EndpointReference != "urn:uuid:cam-001" || devs[1].EndpointReference != "urn:uuid:cam-002" {
+		t.Errorf("unexpected endpoint references: %v, %v", devs[0].EndpointReference, devs[1].EndpointReference)
+	}
+}
+
 func TestProbeLocalNetwork_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -55,3 +93,4 @@ func TestProbeLocalNetwork_Timeout(t *testing.T) {
 		t.Logf("Probe error (expected if network multicast unavailable): %v", err)
 	}
 }
+

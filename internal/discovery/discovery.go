@@ -60,6 +60,9 @@ func ProbeLocalNetwork(ctx context.Context, timeout time.Duration) ([]Discovered
 	if _, err := conn.WriteTo([]byte(probeMsg), raddr); err != nil {
 		return nil, fmt.Errorf("failed to send WS-Discovery probe packet: %w", err)
 	}
+	if localAddr, err := net.ResolveUDPAddr("udp4", "127.0.0.1:3702"); err == nil {
+		_, _ = conn.WriteTo([]byte(probeMsg), localAddr)
+	}
 
 	deadline := time.Now().Add(timeout)
 	_ = conn.SetReadDeadline(deadline)
@@ -81,11 +84,13 @@ func ProbeLocalNetwork(ctx context.Context, timeout time.Duration) ([]Discovered
 			break
 		}
 
-		dev, parseErr := parseProbeMatch(buf[:n], src.String())
-		if parseErr == nil && dev.EndpointReference != "" {
-			if !seen[dev.EndpointReference] {
-				seen[dev.EndpointReference] = true
-				devices = append(devices, dev)
+		devs, parseErr := parseProbeMatches(buf[:n], src.String())
+		if parseErr == nil {
+			for _, dev := range devs {
+				if dev.EndpointReference != "" && !seen[dev.EndpointReference] {
+					seen[dev.EndpointReference] = true
+					devices = append(devices, dev)
+				}
 			}
 		}
 	}
@@ -115,26 +120,40 @@ type probeMatch struct {
 	XAddrs string `xml:"XAddrs"`
 }
 
-func parseProbeMatch(data []byte, srcAddr string) (DiscoveredDevice, error) {
+// parseProbeMatches extracts all ProbeMatch entries from a WS-Discovery ProbeMatches response envelope.
+func parseProbeMatches(data []byte, srcAddr string) ([]DiscoveredDevice, error) {
 	var env probeEnvelope
 	if err := xml.Unmarshal(data, &env); err != nil {
-		return DiscoveredDevice{}, err
+		return nil, err
 	}
 
 	if len(env.Body.ProbeMatches.ProbeMatch) == 0 {
-		return DiscoveredDevice{}, fmt.Errorf("no probe matches found in response")
+		return nil, fmt.Errorf("no probe matches found in response")
 	}
 
-	match := env.Body.ProbeMatches.ProbeMatch[0]
-	xaddrs := strings.Fields(match.XAddrs)
-	types := strings.Fields(match.Types)
-	scopes := strings.Fields(match.Scopes)
+	var devices []DiscoveredDevice
+	for _, match := range env.Body.ProbeMatches.ProbeMatch {
+		xaddrs := strings.Fields(match.XAddrs)
+		types := strings.Fields(match.Types)
+		scopes := strings.Fields(match.Scopes)
 
-	return DiscoveredDevice{
-		EndpointReference: match.EndpointReference.Address,
-		XAddrs:            xaddrs,
-		Types:             types,
-		Scopes:            scopes,
-		Address:           srcAddr,
-	}, nil
+		devices = append(devices, DiscoveredDevice{
+			EndpointReference: match.EndpointReference.Address,
+			XAddrs:            xaddrs,
+			Types:             types,
+			Scopes:            scopes,
+			Address:           srcAddr,
+		})
+	}
+
+	return devices, nil
+}
+
+// parseProbeMatch parses the first ProbeMatch entry for backwards compatibility.
+func parseProbeMatch(data []byte, srcAddr string) (DiscoveredDevice, error) {
+	devs, err := parseProbeMatches(data, srcAddr)
+	if err != nil {
+		return DiscoveredDevice{}, err
+	}
+	return devs[0], nil
 }
