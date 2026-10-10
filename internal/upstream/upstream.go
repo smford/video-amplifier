@@ -563,6 +563,9 @@ func (cs *CameraStream) ResolvedSnapshotURL() string {
 	if strings.Contains(cs.Config.UpstreamURL, "/stream2") {
 		return strings.Replace(cs.Config.UpstreamURL, "/stream2", "/stream8", 1)
 	}
+	if strings.Contains(cs.Config.UpstreamURL, "/device_service") {
+		return strings.Replace(cs.Config.UpstreamURL, "/device_service", "/snapshot", 1)
+	}
 	return ""
 }
 

@@ -3,6 +3,8 @@ package upstream
 import (
 	"bytes"
 	"testing"
+
+	"github.com/smford/video-amplifier/internal/config"
 )
 
 func TestCleanJPEG(t *testing.T) {
@@ -35,3 +37,65 @@ func TestCleanJPEG(t *testing.T) {
 		t.Fatalf("expected random data untouched")
 	}
 }
+
+func TestResolvedSnapshotURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		upstreamURL string
+		snapshotURL string
+		expected    string
+	}{
+		{
+			name:        "explicit snapshot URL overrides",
+			upstreamURL: "rtsp://cam/stream1",
+			snapshotURL: "http://cam/snap.jpg",
+			expected:    "http://cam/snap.jpg",
+		},
+		{
+			name:        "derive stream8 from stream1",
+			upstreamURL: "rtsp://cam/stream1",
+			snapshotURL: "",
+			expected:    "rtsp://cam/stream8",
+		},
+		{
+			name:        "derive stream8 from stream2",
+			upstreamURL: "rtsp://cam/stream2",
+			snapshotURL: "",
+			expected:    "rtsp://cam/stream8",
+		},
+		{
+			name:        "derive snapshot from ONVIF device_service",
+			upstreamURL: "http://127.0.0.1:8000/onvif/cam0/device_service",
+			snapshotURL: "",
+			expected:    "http://127.0.0.1:8000/onvif/cam0/snapshot",
+		},
+		{
+			name:        "derive snapshot from standard ONVIF device_service",
+			upstreamURL: "http://192.168.1.50/onvif/device_service",
+			snapshotURL: "",
+			expected:    "http://192.168.1.50/onvif/snapshot",
+		},
+		{
+			name:        "unmatched URL returns empty",
+			upstreamURL: "rtsp://cam/live/main",
+			snapshotURL: "",
+			expected:    "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cs := &CameraStream{
+				Config: config.CameraConfig{
+					UpstreamURL: tc.upstreamURL,
+					SnapshotURL: tc.snapshotURL,
+				},
+			}
+			actual := cs.ResolvedSnapshotURL()
+			if actual != tc.expected {
+				t.Errorf("expected %q, got %q", tc.expected, actual)
+			}
+		})
+	}
+}
+
